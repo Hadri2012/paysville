@@ -1,6 +1,5 @@
 import { assertSameOrigin, handle, jsonOk, limit, readJson, siteUrl } from "@/lib/http";
 import { errors } from "@/lib/errors";
-import { notifyOrderPaid } from "@/lib/notifications";
 import { confirmOrderPayment, createPendingOrder, releaseOrder } from "@/lib/orders";
 import { buildQuote, sweepReservations } from "@/lib/shop";
 import { readState, transaction } from "@/lib/store";
@@ -66,13 +65,10 @@ export async function POST(request: Request) {
     });
 
     if (bypass) {
-      const confirmed = await transaction((state) => {
+      await transaction((state) => {
         sweepReservations(state);
-        return confirmOrderPayment(state, order.id, {});
+        confirmOrderPayment(state, order.id, {});
       });
-      // Le parcours de test envoie le même e-mail que le parcours réel : c'est aussi
-      // ce qui permet de vérifier la configuration Resend sans encaisser un paiement.
-      if (confirmed) await notifyOrderPaid(confirmed, request);
       return jsonOk({
         url: `/confirmation?commande=${encodeURIComponent(order.number)}&token=${encodeURIComponent(order.accessToken)}`,
         orderNumber: order.number,
