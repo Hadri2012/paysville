@@ -51,6 +51,7 @@ export function ProductCard({
             productId={product.id}
             name={product.name}
             disabled={!product.inStock}
+            available={product.available}
             className="btn btn-primary btn-sm"
             label="Ajouter"
           />

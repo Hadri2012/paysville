@@ -19,7 +19,7 @@ interface CartContextValue {
   items: CartItem[];
   count: number;
   hydrated: boolean;
-  add: (productId: string, quantity?: number, label?: string) => void;
+  add: (productId: string, quantity?: number, label?: string, max?: number) => void;
   setQuantity: (productId: string, quantity: number) => void;
   remove: (productId: string) => void;
   clear: () => void;
@@ -97,19 +97,36 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const add = useCallback(
-    (productId: string, quantity = 1, label?: string) => {
+    (productId: string, quantity = 1, label?: string, max?: number) => {
+      // `max` (le stock disponible) borne le total obtenu, pas seulement la quantité
+      // ajoutée : sans ça, ajouter par petites touches permettrait de dépasser le
+      // stock réel avant même que le serveur ne recalcule le panier.
+      const cap = max === undefined ? MAX_QTY : Math.min(MAX_QTY, Math.max(0, max));
+      let blocked = false;
       setItems((current) => {
         const existing = current.find((item) => item.productId === productId);
         if (existing) {
+          if (existing.quantity >= cap) {
+            blocked = true;
+            return current;
+          }
           return current.map((item) =>
             item.productId === productId
-              ? { ...item, quantity: Math.min(MAX_QTY, item.quantity + quantity) }
+              ? { ...item, quantity: Math.min(cap, item.quantity + quantity) }
               : item,
           );
         }
-        return [...current, { productId, quantity: Math.min(MAX_QTY, quantity) }];
+        if (cap <= 0) {
+          blocked = true;
+          return current;
+        }
+        return [...current, { productId, quantity: Math.min(cap, quantity) }];
       });
-      notify(label ? `« ${label} » ajouté au panier` : "Produit ajouté au panier");
+      if (blocked) {
+        notify("Quantité maximale déjà atteinte dans le panier");
+      } else {
+        notify(label ? `« ${label} » ajouté au panier` : "Produit ajouté au panier");
+      }
     },
     [notify],
   );

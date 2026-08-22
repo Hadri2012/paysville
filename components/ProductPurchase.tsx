@@ -15,18 +15,23 @@ export function ProductPurchase({
   available: number;
   maxPerOrder?: number;
 }) {
-  const { add } = useCart();
+  const { add, items } = useCart();
   const [quantity, setQuantity] = useState(1);
-  const max = Math.max(0, Math.min(available, maxPerOrder));
+  const inCart = items.find((item) => item.productId === productId)?.quantity ?? 0;
+  // Ce qui est déjà dans le panier compte dans la limite : sinon on pourrait la
+  // dépasser en ajoutant plusieurs fois depuis la fiche produit.
+  const max = Math.max(0, Math.min(available, maxPerOrder) - inCart);
 
   if (max === 0) {
     return (
       <div className="stack">
         <div className="alert alert-error" role="status">
-          Ce produit est actuellement en rupture de stock et ne peut pas être commandé.
+          {inCart > 0
+            ? "Vous avez déjà tout le stock disponible de ce produit dans votre panier."
+            : "Ce produit est actuellement en rupture de stock et ne peut pas être commandé."}
         </div>
-        <Link href="/boutique" className="btn btn-secondary">
-          Voir les autres produits
+        <Link href={inCart > 0 ? "/panier" : "/boutique"} className="btn btn-secondary">
+          {inCart > 0 ? "Voir le panier" : "Voir les autres produits"}
         </Link>
       </div>
     );
@@ -66,7 +71,7 @@ export function ProductPurchase({
         <button
           type="button"
           className="btn btn-primary btn-lg"
-          onClick={() => add(productId, quantity, name)}
+          onClick={() => add(productId, quantity, name, available)}
         >
           Ajouter au panier
         </button>
