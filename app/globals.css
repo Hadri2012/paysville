@@ -352,6 +352,10 @@ hr {
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-danger:hover:not([disabled]) { background: #8f1c12; }
 
+.btn-icon { padding: 7px 10px; line-height: 1; }
+.btn-icon-danger { color: var(--danger); }
+.btn-icon-danger:hover:not([disabled]) { background: var(--danger-soft); }
+
 .btn-block { width: 100%; }
 .btn-sm { padding: 7px 14px; font-size: 0.85rem; }
 .btn-lg { padding: 14px 26px; font-size: 1rem; }
@@ -890,6 +894,10 @@ tbody td {
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--surface); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Commande « Prête » : rayée pour repérer d'un coup d'œil ce qui reste à faire. */
+tr.row-ready { opacity: 0.55; }
+tr.row-ready td:not(.no-strike) { text-decoration: line-through; }
 
 /* --------------------------------- Admin -------------------------------- */
 

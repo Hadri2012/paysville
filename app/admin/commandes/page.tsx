@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { PaymentBadge, StatusBadge } from "@/components/OrderDetails";
 import { requireAdminPage } from "@/lib/adminGuard";
 import { formatPrice } from "@/lib/money";
@@ -144,11 +145,12 @@ export default async function AdminOrdersPage({
                 <th>Statut</th>
                 <th>Paiement</th>
                 <th className="num">Total</th>
+                <th className="num">Actions</th>
               </tr>
             </thead>
             <tbody>
               {orders.map((order) => (
-                <tr key={order.id}>
+                <tr key={order.id} className={order.status === "ready" ? "row-ready" : undefined}>
                   <td>
                     <Link href={`/admin/commandes/${order.id}`} className="mono">
                       {order.number}
@@ -173,13 +175,16 @@ export default async function AdminOrdersPage({
                   <td className="small">
                     {order.address.postalCode} {order.address.city}
                   </td>
-                  <td>
+                  <td className="no-strike">
                     <StatusBadge status={order.status} />
                   </td>
-                  <td>
+                  <td className="no-strike">
                     <PaymentBadge status={order.paymentStatus} />
                   </td>
                   <td className="num">{formatPrice(order.totalCents, order.currency)}</td>
+                  <td className="num no-strike">
+                    <DeleteOrderButton orderId={order.id} orderNumber={order.number} />
+                  </td>
                 </tr>
               ))}
             </tbody>

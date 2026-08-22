@@ -63,3 +63,31 @@ export async function PATCH(request: Request, context: Context) {
     return jsonOk({ order });
   });
 }
+
+/**
+ * Suppression définitive d'une commande (bouton corbeille de l'admin) : contrairement
+ * à une annulation, la commande disparaît entièrement — plus aucune trace, y compris
+ * dans l'historique et le chiffre d'affaires. Si elle était payée et pas déjà
+ * annulée/remboursée, le stock correspondant est remis en rayon pour ne pas le perdre.
+ */
+export async function DELETE(request: Request, context: Context) {
+  return handle(async () => {
+    assertSameOrigin(request);
+    await requireAdmin();
+    const { id } = await context.params;
+
+    await transaction((state) => {
+      const order = state.orders.find((o) => o.id === id);
+      if (!order) throw errors.orderNotFound();
+
+      if (order.paymentStatus === "paid" && !CLOSED.includes(order.status)) {
+        restockOrder(state, order);
+      }
+
+      state.reservations = state.reservations.filter((r) => r.orderId !== id);
+      state.orders = state.orders.filter((o) => o.id !== id);
+    });
+
+    return jsonOk({ deleted: true });
+  });
+}

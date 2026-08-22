@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { OrderDetails, PaymentBadge } from "@/components/OrderDetails";
+import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { OrderStatusEditor } from "@/components/admin/OrderStatusEditor";
 import { requireAdminPage } from "@/lib/adminGuard";
 import { publicOrderView } from "@/lib/orders";
@@ -55,6 +56,19 @@ export default async function AdminOrderPage({
               orderId={order.id}
               status={order.status}
               adminNote={order.adminNote}
+            />
+          </section>
+
+          <section className="card">
+            <h3 className="card-title">Zone dangereuse</h3>
+            <p className="small muted" style={{ marginTop: 0 }}>
+              Supprime la commande entièrement, sans laisser de trace.
+            </p>
+            <DeleteOrderButton
+              orderId={order.id}
+              orderNumber={order.number}
+              redirectTo="/admin/commandes"
+              label="Supprimer la commande"
             />
           </section>
 
