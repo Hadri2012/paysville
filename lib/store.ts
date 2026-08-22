@@ -83,14 +83,15 @@ function migrate(state: State): State {
   }
 
   // v3 -> v4 : auto-publication des avis avec filtrage anti-spam automatique.
-  // Les avis non-approuvés deviennent marqués comme non-flaggés (ils seront visibles),
-  // et les anciens avis n'ont pas de flag donc ils deviennent faux par défaut.
+  // Les avis non-approuvés deviennent marqués comme non-flaggés (ils seront visibles).
   if (state.schemaVersion < 4) {
-    for (const review of state.reviews) {
-      if ('approved' in review && 'moderatedAt' in review) {
-        (review as any).flagged = !(review as any).approved;
-        delete (review as any).approved;
-        delete (review as any).moderatedAt;
+    for (const item of state.reviews) {
+      const oldReview = item as unknown as Record<string, unknown>;
+      if ('approved' in oldReview && 'moderatedAt' in oldReview) {
+        const review = item as unknown as Record<string, unknown>;
+        review.flagged = !(review.approved as boolean);
+        delete review.approved;
+        delete review.moderatedAt;
       }
     }
   }
