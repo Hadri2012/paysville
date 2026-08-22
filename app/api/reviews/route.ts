@@ -7,10 +7,9 @@ import { cleanString, toInt } from "@/lib/validation";
 export const dynamic = "force-dynamic";
 
 /**
- * Dépôt d'un avis client. Le formulaire est public : la limitation de débit et la
- * modération obligatoire (`approved: false` à la création) sont les deux seules
- * barrières contre le spam — un avis n'apparaît sur la fiche produit qu'après
- * validation depuis l'administration.
+ * Dépôt d'un avis client. Le formulaire est public : la limitation de débit et le
+ * filtrage automatique du spam sont les deux seules barrières — les avis sont
+ * publiés immédiatement, sauf s'ils sont détectés comme spam.
  */
 export async function POST(request: Request) {
   return handle(async () => {
@@ -40,8 +39,8 @@ export async function POST(request: Request) {
     });
 
     return jsonOk({
-      pending: true,
-      message: "Merci ! Votre avis sera publié après vérification.",
+      pending: false,
+      message: "Merci ! Votre avis est maintenant publié.",
     });
   });
 }

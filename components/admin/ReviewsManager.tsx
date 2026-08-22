@@ -12,7 +12,7 @@ export interface AdminReviewRow {
   author: string;
   rating: number;
   comment: string;
-  approved: boolean;
+  flagged: boolean;
   createdAt: string;
 }
 
@@ -41,8 +41,8 @@ export function ReviewsManager({ reviews }: { reviews: AdminReviewRow[] }) {
     router.refresh();
   };
 
-  const setApproved = (id: string, approved: boolean) =>
-    run(id, () => apiCall(`/api/admin/reviews/${id}`, "PATCH", { approved }));
+  const setFlagged = (id: string, flagged: boolean) =>
+    run(id, () => apiCall(`/api/admin/reviews/${id}`, "PATCH", { flagged }));
 
   const remove = (id: string, author: string) => {
     if (
@@ -80,31 +80,31 @@ export function ReviewsManager({ reviews }: { reviews: AdminReviewRow[] }) {
                 {formatDate(review.createdAt)}
               </div>
             </div>
-            <span className={`badge ${review.approved ? "badge-success" : "badge-warning"}`}>
-              {review.approved ? "Publié" : "En attente"}
+            <span className={`badge ${review.flagged ? "badge-danger" : "badge-success"}`}>
+              {review.flagged ? "Marqué comme spam" : "Publié"}
             </span>
           </div>
 
           <p style={{ whiteSpace: "pre-wrap", margin: "10px 0" }}>{review.comment}</p>
 
           <div className="btn-row">
-            {review.approved ? (
+            {review.flagged ? (
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={busy === review.id}
-                onClick={() => setApproved(review.id, false)}
+                onClick={() => setFlagged(review.id, false)}
               >
-                Dépublier
+                Débloquer
               </button>
             ) : (
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
+                className="btn btn-secondary btn-sm"
                 disabled={busy === review.id}
-                onClick={() => setApproved(review.id, true)}
+                onClick={() => setFlagged(review.id, true)}
               >
-                Publier
+                Marquer comme spam
               </button>
             )}
             <button

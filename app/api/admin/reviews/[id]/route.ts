@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
 
-/** Approuve ou remet en attente un avis (`{ approved: boolean }`). */
+/** Marque ou demarc un avis comme spam (`{ flagged: boolean }`). */
 export async function PATCH(request: Request, context: Context) {
   return handle(async () => {
     assertSameOrigin(request);
@@ -19,8 +19,7 @@ export async function PATCH(request: Request, context: Context) {
     const review = await transaction((state) => {
       const found = state.reviews.find((r) => r.id === id);
       if (!found) throw errors.validation("Avis introuvable.");
-      found.approved = toBoolean(body.approved);
-      found.moderatedAt = new Date().toISOString();
+      found.flagged = toBoolean(body.flagged);
       return found;
     });
 

@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -80,6 +80,19 @@ function migrate(state: State): State {
   // cette étape ne sert qu'à porter le numéro de version.
   if (state.schemaVersion < 3) {
     state.reviews ??= [];
+  }
+
+  // v3 -> v4 : auto-publication des avis avec filtrage anti-spam automatique.
+  // Les avis non-approuvés deviennent marqués comme non-flaggés (ils seront visibles),
+  // et les anciens avis n'ont pas de flag donc ils deviennent faux par défaut.
+  if (state.schemaVersion < 4) {
+    for (const review of state.reviews) {
+      if ('approved' in review && 'moderatedAt' in review) {
+        (review as any).flagged = !(review as any).approved;
+        delete (review as any).approved;
+        delete (review as any).moderatedAt;
+      }
+    }
   }
 
   state.schemaVersion = CURRENT_SCHEMA_VERSION;

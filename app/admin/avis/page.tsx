@@ -12,11 +12,11 @@ export default async function AdminReviewsPage() {
 
   const products = new Map(state.products.map((p) => [p.id, p]));
 
-  // Les avis en attente d'abord : c'est la seule file qui demande une action.
+  // Les avis marqués comme spam d'abord : c'est la seule file qui demande une action.
   const rows: AdminReviewRow[] = [...state.reviews]
     .sort(
       (a, b) =>
-        Number(a.approved) - Number(b.approved) || b.createdAt.localeCompare(a.createdAt),
+        Number(b.flagged) - Number(a.flagged) || b.createdAt.localeCompare(a.createdAt),
     )
     .map((review) => {
       const product = products.get(review.productId);
@@ -27,12 +27,12 @@ export default async function AdminReviewsPage() {
         author: review.author,
         rating: review.rating,
         comment: review.comment,
-        approved: review.approved,
+        flagged: review.flagged,
         createdAt: review.createdAt,
       };
     });
 
-  const pending = rows.filter((row) => !row.approved).length;
+  const flagged = rows.filter((row) => row.flagged).length;
 
   return (
     <div className="stack-lg">
@@ -41,10 +41,10 @@ export default async function AdminReviewsPage() {
           <h1>Avis clients</h1>
           <p>
             {rows.length} avis au total
-            {pending > 0
-              ? ` — ${pending} en attente de validation.`
-              : " — rien en attente."}{" "}
-            Un avis n&apos;apparaît sur la boutique qu&apos;une fois publié.
+            {flagged > 0
+              ? ` — ${flagged} marqué${flagged > 1 ? "s" : ""} comme spam.`
+              : " — aucun spam détecté."}{" "}
+            Les avis sont publiés immédiatement, mais ceux soupçonnés de spam sont marqués.
           </p>
         </div>
       </div>

@@ -1,21 +1,30 @@
 import { newId } from "./ids";
 import type { Review, State } from "./types";
 
-/**
- * Avis clients. Seuls les avis approuvés par un administrateur sont visibles
- * publiquement : le formulaire est ouvert à tous, donc la modération est la
- * seule barrière entre la fiche produit et le spam.
- */
-
 export interface ReviewSummary {
   /** Moyenne sur 5, arrondie au dixième. `null` s'il n'y a aucun avis publié. */
   average: number | null;
   count: number;
 }
 
+function isSpam(author: string, comment: string): boolean {
+  const text = (author + " " + comment).toLowerCase();
+
+  // Trop de caractères répétés (ex: "aaaaaaa")
+  if (/(.)\1{5,}/.test(text)) return true;
+
+  // Contient "http" ou "https" (liens dans les avis = suspect)
+  if (/https?:/.test(text)) return true;
+
+  // Contient du charabia (15+ caractères spéciaux non-accentués consécutifs)
+  if (/[!@#$%^&*()_+=\[\]{};':"\\|<>,./?]{15,}/.test(text)) return true;
+
+  return false;
+}
+
 export function approvedReviews(state: State, productId: string): Review[] {
   return state.reviews
-    .filter((r) => r.productId === productId && r.approved)
+    .filter((r) => r.productId === productId && !r.flagged)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -32,11 +41,10 @@ export function reviewSummary(state: State, productId: string): ReviewSummary {
   return summarize(approvedReviews(state, productId));
 }
 
-/** Moyennes de tous les produits en une passe (évite un balayage par produit). */
 export function reviewSummaries(state: State): Map<string, ReviewSummary> {
   const grouped = new Map<string, Review[]>();
   for (const review of state.reviews) {
-    if (!review.approved) continue;
+    if (review.flagged) continue;
     const list = grouped.get(review.productId);
     if (list) list.push(review);
     else grouped.set(review.productId, [review]);
@@ -62,15 +70,13 @@ export function createReview(state: State, input: NewReviewInput): Review {
     author: input.author,
     rating: input.rating,
     comment: input.comment,
-    approved: false,
+    flagged: isSpam(input.author, input.comment),
     createdAt: new Date().toISOString(),
-    moderatedAt: null,
   };
   state.reviews.push(review);
   return review;
 }
 
-/** Vue publique : ni l'état de modération ni les identifiants internes ne sortent. */
 export function publicReviewView(review: Review) {
   return {
     id: review.id,
