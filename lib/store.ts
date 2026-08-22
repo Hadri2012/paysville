@@ -198,6 +198,22 @@ const globalStore = globalThis as unknown as { __hadrishopStore?: Store };
 export function getStore(): Store {
   if (!globalStore.__hadrishopStore) {
     const url = process.env.DATABASE_URL;
+
+    // Sur un hébergement au système de fichiers en lecture seule (Vercel et
+    // équivalents), le pilote fichier échouerait avec une erreur EROFS obscure,
+    // à la première écriture seulement — donc potentiellement en pleine commande.
+    // Mieux vaut refuser tout de suite avec un message qui dit quoi faire.
+    if (!url && process.env.VERCEL) {
+      throw new Error(
+        "DATABASE_URL est absent. Sur Vercel, le système de fichiers est en " +
+          "lecture seule : le stockage fichier ne peut pas fonctionner et les " +
+          "données (commandes, stocks, compte admin) seraient perdues. " +
+          "Créez une base PostgreSQL (Vercel → Storage → Create Database → " +
+          "Postgres, puis Connect au projet), ou renseignez DATABASE_URL dans " +
+          "Settings → Environment Variables, puis redéployez.",
+      );
+    }
+
     globalStore.__hadrishopStore = url
       ? createPostgresStore(url)
       : createFileStore();
