@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { centsToInput, formatPrice } from "@/lib/money";
+import { previewZoneFeeCents } from "@/lib/shop";
 import { apiCall, type ApiResult } from "./apiClient";
 
 export interface ZoneRow {
@@ -114,7 +115,7 @@ export function ShippingManager({
               onChange={(event) =>
                 setNewZone((current) => ({ ...current, fee: event.target.value }))
               }
-              placeholder="Vide = frais par défaut"
+              placeholder="Vide = calcul à la distance"
               inputMode="decimal"
             />
           </div>
@@ -187,10 +188,15 @@ export function ShippingManager({
                     Frais actuels :{" "}
                     {zone.feeCents !== null
                       ? formatPrice(zone.feeCents, settings.currency)
-                      : `par défaut (${formatPrice(
-                          settings.defaultShippingFeeCents,
-                          settings.currency,
-                        )})`}
+                      : (() => {
+                          const auto = previewZoneFeeCents(
+                            zone,
+                            settings.defaultShippingFeeCents,
+                          );
+                          return auto === 0
+                            ? "offerte"
+                            : `${formatPrice(auto, settings.currency)} (calculé à la distance)`;
+                        })()}
                   </span>
                 </div>
 
@@ -219,7 +225,7 @@ export function ShippingManager({
                           [zone.id]: { ...edit, fee: event.target.value },
                         }))
                       }
-                      placeholder="Vide = frais par défaut"
+                      placeholder="Vide = calcul à la distance"
                       inputMode="decimal"
                     />
                   </div>
@@ -320,6 +326,10 @@ export function ShippingManager({
               placeholder="Vide = jamais offerte"
               inputMode="decimal"
             />
+            <span className="hint">
+              Non utilisé actuellement : la livraison offerte est réservée à la zone
+              1435 (Mont-Saint-Guibert) ; les autres zones sont facturées à la distance.
+            </span>
           </div>
           <div className="field">
             <label htmlFor="s-res">Durée de réservation du stock (minutes)</label>

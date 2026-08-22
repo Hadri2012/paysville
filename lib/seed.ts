@@ -1,5 +1,43 @@
+import { BELGIAN_POSTAL_AREAS } from "./geo";
 import { newId, slugify } from "./ids";
-import type { Product, State } from "./types";
+import type { Product, Promotion, ShippingZone, State } from "./types";
+
+/**
+ * Zones de livraison par défaut : la zone d'origine (1435, offerte) puis toutes
+ * les communes connues dans `lib/geo.ts` (jusqu'à 30 km, Gembloux inclus), dont le
+ * tarif est calculé à la distance (`feeCents: null`). Utilisé à la fois pour
+ * l'amorçage d'une base neuve et pour la migration d'une base existante
+ * (voir `normalize()` dans `lib/store.ts`).
+ */
+export function defaultShippingZones(): ShippingZone[] {
+  return Object.entries(BELGIAN_POSTAL_AREAS).map(([postalCode, area]) => ({
+    id: newId(),
+    postalCode,
+    cities: area.cities,
+    feeCents: null,
+    active: true,
+  }));
+}
+
+/** Code promo de démarrage, pour valider le parcours d'achat sans en créer un manuellement. */
+export function defaultPromotion(): Promotion {
+  const now = new Date().toISOString();
+  return {
+    id: newId(),
+    code: "BIENVENUE10",
+    active: true,
+    type: "percent",
+    value: 10,
+    startsAt: null,
+    endsAt: null,
+    minSubtotalCents: null,
+    maxUses: null,
+    uses: 0,
+    archived: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 /** Catalogue initial demandé dans le cahier des charges (modifiable ensuite depuis /admin). */
 const INITIAL_CATALOG: {
@@ -149,7 +187,7 @@ export function initialState(): State {
   }));
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     settings: {
       shopName: "Hadrishop",
       currency: "EUR",
@@ -168,16 +206,8 @@ export function initialState(): State {
     },
     products,
     orders: [],
-    promotions: [],
-    shippingZones: [
-      {
-        id: newId(),
-        postalCode: "1435",
-        cities: ["Mont-Saint-Guibert", "Corbais", "Hévillers"],
-        feeCents: null,
-        active: true,
-      },
-    ],
+    promotions: [defaultPromotion()],
+    shippingZones: defaultShippingZones(),
     reservations: [],
     admins: [],
     sessions: [],

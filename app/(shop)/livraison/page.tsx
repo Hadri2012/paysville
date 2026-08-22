@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { MAX_DELIVERY_DISTANCE_KM, SHOP_HUB_POSTAL_CODE } from "@/lib/geo";
 import { formatPrice } from "@/lib/money";
+import { previewZoneFeeCents } from "@/lib/shop";
 import { readState } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +14,14 @@ export const metadata: Metadata = {
 
 export default async function ShippingPage() {
   const state = await readState();
-  const zones = state.shippingZones.filter((zone) => zone.active);
-  const { currency, defaultShippingFeeCents, freeShippingThresholdCents } = state.settings;
+  const zones = state.shippingZones
+    .filter((zone) => zone.active)
+    .sort((a, b) => {
+      if (a.postalCode === SHOP_HUB_POSTAL_CODE) return -1;
+      if (b.postalCode === SHOP_HUB_POSTAL_CODE) return 1;
+      return a.postalCode.localeCompare(b.postalCode);
+    });
+  const { currency, defaultShippingFeeCents } = state.settings;
 
   return (
     <main className="page">
@@ -41,32 +49,33 @@ export default async function ShippingPage() {
                 </tr>
               </thead>
               <tbody>
-                {zones.map((zone) => (
-                  <tr key={zone.id}>
-                    <td className="mono">{zone.postalCode}</td>
-                    <td>
-                      {zone.cities.length > 0
-                        ? zone.cities.join(", ")
-                        : "Toutes les communes de ce code postal"}
-                    </td>
-                    <td className="num">
-                      {(zone.feeCents ?? defaultShippingFeeCents) > 0
-                        ? formatPrice(zone.feeCents ?? defaultShippingFeeCents, currency)
-                        : "Offerte"}
-                    </td>
-                  </tr>
-                ))}
+                {zones.map((zone) => {
+                  const feeCents = previewZoneFeeCents(zone, defaultShippingFeeCents);
+                  return (
+                    <tr key={zone.id}>
+                      <td className="mono">{zone.postalCode}</td>
+                      <td>
+                        {zone.cities.length > 0
+                          ? zone.cities.join(", ")
+                          : "Toutes les communes de ce code postal"}
+                      </td>
+                      <td className="num">
+                        {feeCents > 0 ? formatPrice(feeCents, currency) : "Offerte"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
 
-        {freeShippingThresholdCents !== null ? (
-          <div className="notice-box">
-            Livraison offerte à partir de{" "}
-            {formatPrice(freeShippingThresholdCents, currency)} d&apos;achat.
-          </div>
-        ) : null}
+        <div className="notice-box">
+          Livraison offerte uniquement à {SHOP_HUB_POSTAL_CODE} (Mont-Saint-Guibert).
+          Au-delà, les frais sont calculés selon la distance (2&nbsp;€ par 5&nbsp;km), dans
+          un rayon de {MAX_DELIVERY_DISTANCE_KM}&nbsp;km autour du magasin — Gembloux
+          compris.
+        </div>
 
         <section>
           <h2>Comment ça marche ?</h2>

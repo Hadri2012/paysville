@@ -1,9 +1,10 @@
 import { assertSameOrigin, handle, jsonOk, limit, readJson, siteUrl } from "@/lib/http";
 import { errors } from "@/lib/errors";
-import { createPendingOrder, releaseOrder } from "@/lib/orders";
+import { confirmOrderPayment, createPendingOrder, releaseOrder } from "@/lib/orders";
 import { buildQuote, sweepReservations } from "@/lib/shop";
 import { readState, transaction } from "@/lib/store";
 import { createCheckoutSession, isStripeConfigured } from "@/lib/stripe";
+import { verifyTestBypassCode } from "@/lib/testBypass";
 import { cleanString, parseCartItems, parseCheckoutIdentity } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,11 @@ export async function POST(request: Request) {
 
     const promoCode = cleanString(body.promoCode, 40) || null;
 
+    // Code de contournement pour valider une commande sans paiement Stripe réel
+    // (test uniquement — voir lib/testBypass.ts). Inactif par défaut, et refuse de
+    // fonctionner si une clé Stripe de production est configurée.
+    const bypass = verifyTestBypassCode(body.testBypassCode);
+
     // Pré-vérification (produits, stock, promo, zone de livraison) : elle donne au
     // client un message précis avant même de parler de paiement. Elle est refaite
     // dans la transaction ci-dessous, qui seule fait autorité.
@@ -40,7 +46,7 @@ export async function POST(request: Request) {
       strict: true,
     });
 
-    if (!isStripeConfigured()) throw errors.stripeNotConfigured();
+    if (!bypass && !isStripeConfigured()) throw errors.stripeNotConfigured();
 
     const { order, reservationMinutes } = await transaction((state) => {
       sweepReservations(state);
@@ -57,6 +63,17 @@ export async function POST(request: Request) {
         reservationMinutes: state.settings.reservationMinutes,
       };
     });
+
+    if (bypass) {
+      await transaction((state) => {
+        sweepReservations(state);
+        confirmOrderPayment(state, order.id, {});
+      });
+      return jsonOk({
+        url: `/confirmation?commande=${encodeURIComponent(order.number)}&token=${encodeURIComponent(order.accessToken)}`,
+        orderNumber: order.number,
+      });
+    }
 
     try {
       const session = await createCheckoutSession(

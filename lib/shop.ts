@@ -1,4 +1,10 @@
 import { errors } from "./errors";
+import {
+  MAX_DELIVERY_DISTANCE_KM,
+  SHOP_HUB_POSTAL_CODE,
+  distanceFeeCents,
+  distanceFromHubKm,
+} from "./geo";
 import { productImage } from "./images";
 import type { Product, Promotion, ShippingZone, State } from "./types";
 import { normalizeLoose, type CartLineInput } from "./validation";
@@ -178,12 +184,36 @@ function postalMatches(zone: ShippingZone, postalCode: string): boolean {
   return normalizeLoose(zone.postalCode) === normalizeLoose(postalCode);
 }
 
-export function resolveShipping(
-  state: State,
-  postalCode: string,
-  city: string,
-  subtotalAfterDiscountCents: number,
-): ShippingResult {
+/**
+ * Frais d'une zone tels qu'affichés (admin, page « Livraison »), sans commande
+ * réelle : même règle que `resolveShipping`, pour ne jamais afficher un tarif
+ * différent de celui réellement facturé.
+ */
+export function previewZoneFeeCents(
+  zone: Pick<ShippingZone, "postalCode" | "feeCents">,
+  defaultFeeCents: number,
+): number {
+  if (normalizeLoose(zone.postalCode) === normalizeLoose(SHOP_HUB_POSTAL_CODE)) return 0;
+  if (zone.feeCents !== null) return Math.max(0, zone.feeCents);
+  const distanceKm = distanceFromHubKm(zone.postalCode);
+  if (distanceKm !== null && distanceKm <= MAX_DELIVERY_DISTANCE_KM) {
+    return distanceFeeCents(distanceKm);
+  }
+  return Math.max(0, defaultFeeCents);
+}
+
+/**
+ * Résout les frais de livraison pour une adresse.
+ *
+ * Règle : la livraison est offerte exclusivement dans la zone d'origine du
+ * magasin (1435, Mont-Saint-Guibert). Au-delà, elle est facturée au prorata de
+ * la distance (2 € / 5 km), jusqu'à 30 km à vol d'oiseau. Un frais explicite
+ * saisi par l'admin pour une zone (`feeCents` non nul) reste prioritaire — la
+ * distance ne sert qu'à défaut de tarif manuel.
+ */
+export function resolveShipping(state: State, postalCode: string, city: string): ShippingResult {
+  const isHub = normalizeLoose(postalCode) === normalizeLoose(SHOP_HUB_POSTAL_CODE);
+
   const zones = state.shippingZones.filter((z) => z.active);
   const zone = zones.find((z) => {
     if (!postalMatches(z, postalCode)) return false;
@@ -192,13 +222,30 @@ export function resolveShipping(
     return z.cities.some((c) => normalizeLoose(c) === needle);
   });
 
-  if (!zone) return { covered: false, feeCents: 0, zone: null };
+  if (zone) {
+    if (isHub) return { covered: true, feeCents: 0, zone };
+    if (zone.feeCents !== null) {
+      return { covered: true, feeCents: Math.max(0, zone.feeCents), zone };
+    }
+    const distanceKm = distanceFromHubKm(zone.postalCode);
+    const feeCents =
+      distanceKm !== null && distanceKm <= MAX_DELIVERY_DISTANCE_KM
+        ? distanceFeeCents(distanceKm)
+        : Math.max(0, state.settings.defaultShippingFeeCents);
+    return { covered: true, feeCents, zone };
+  }
 
-  const threshold = state.settings.freeShippingThresholdCents;
-  const base = zone.feeCents ?? state.settings.defaultShippingFeeCents;
-  const feeCents =
-    threshold !== null && subtotalAfterDiscountCents >= threshold ? 0 : Math.max(0, base);
-  return { covered: true, feeCents, zone };
+  // Aucune zone déclarée par l'admin pour ce code postal : couverture automatique
+  // par la distance, jusqu'à 30 km autour de 1435 (Mont-Saint-Guibert), Gembloux
+  // inclus. Au-delà (ou code postal inconnu), la livraison n'est pas proposée.
+  if (!isHub) {
+    const distanceKm = distanceFromHubKm(postalCode);
+    if (distanceKm !== null && distanceKm <= MAX_DELIVERY_DISTANCE_KM) {
+      return { covered: true, feeCents: distanceFeeCents(distanceKm), zone: null };
+    }
+  }
+
+  return { covered: false, feeCents: 0, zone: null };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -341,7 +388,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
   const postalCode = (input.postalCode ?? "").trim();
   const city = (input.city ?? "").trim();
   if (postalCode) {
-    const shipping = resolveShipping(state, postalCode, city, subtotalCents - discountCents);
+    const shipping = resolveShipping(state, postalCode, city);
     shippingCovered = shipping.covered;
     if (shipping.covered) {
       shippingCents = shipping.feeCents;

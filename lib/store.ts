@@ -1,7 +1,9 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { initialState } from "./seed";
+import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
+
+const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -31,8 +33,10 @@ function normalize(state: State): State {
   const fallback = initialState();
   const settings = { ...fallback.settings, ...(state.settings ?? {}) };
   settings.legal = { ...fallback.settings.legal, ...(state.settings?.legal ?? {}) };
-  return {
-    schemaVersion: state.schemaVersion ?? 1,
+  const version = state.schemaVersion ?? 1;
+
+  const normalized: State = {
+    schemaVersion: version,
     settings,
     products: state.products ?? [],
     orders: state.orders ?? [],
@@ -43,6 +47,34 @@ function normalize(state: State): State {
     sessions: state.sessions ?? [],
     counters: { orderSeq: state.counters?.orderSeq ?? {} },
   };
+
+  return migrate(normalized);
+}
+
+/**
+ * Migrations de schéma, appliquées une seule fois (portées par `schemaVersion`).
+ * Une base déjà en place n'est jamais écrasée : on ajoute uniquement ce qui manque,
+ * pour ne pas ressusciter une zone ou un code promo qu'un admin aurait supprimé.
+ */
+function migrate(state: State): State {
+  if (state.schemaVersion < CURRENT_SCHEMA_VERSION) {
+    // Zones de livraison élargies (30 km autour de 1435, Gembloux inclus) et code
+    // promo de démarrage, ajoutés seulement s'ils n'existent pas déjà (par code
+    // postal / par code promo) pour ne rien dupliquer ni rien restaurer après coup.
+    const existingPostalCodes = new Set(
+      state.shippingZones.map((z) => z.postalCode.trim().toUpperCase()),
+    );
+    for (const zone of defaultShippingZones()) {
+      if (!existingPostalCodes.has(zone.postalCode.trim().toUpperCase())) {
+        state.shippingZones.push(zone);
+      }
+    }
+    if (state.promotions.length === 0) {
+      state.promotions.push(defaultPromotion());
+    }
+    state.schemaVersion = CURRENT_SCHEMA_VERSION;
+  }
+  return state;
 }
 
 /* -------------------------------------------------------------------------- */

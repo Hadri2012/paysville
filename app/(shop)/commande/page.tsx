@@ -50,6 +50,7 @@ function CheckoutForm() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [promoCode, setPromoCode] = useState("");
+  const [testBypassCode, setTestBypassCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(true);
@@ -155,7 +156,7 @@ function CheckoutForm() {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, items, promoCode }),
+        body: JSON.stringify({ ...form, items, promoCode, testBypassCode }),
       });
       const data = await response.json();
 
@@ -169,7 +170,8 @@ function CheckoutForm() {
         return;
       }
 
-      // Redirection vers la page de paiement hébergée par Stripe.
+      // Redirection vers la page de paiement Stripe, ou directement vers la
+      // confirmation si un code de test valide a permis de contourner Stripe.
       window.location.href = data.url as string;
     } catch {
       setError(
@@ -469,6 +471,30 @@ function CheckoutForm() {
               </div>
             </fieldset>
           </section>
+
+          {process.env.NEXT_PUBLIC_TEST_CHECKOUT_ENABLED === "true" ? (
+            <section className="card" style={{ borderStyle: "dashed" }}>
+              <fieldset>
+                <legend>Test — contournement Stripe</legend>
+                <div className="field">
+                  <label htmlFor="testBypassCode">Code de test (facultatif)</label>
+                  <input
+                    id="testBypassCode"
+                    name="testBypassCode"
+                    className="mono"
+                    autoComplete="off"
+                    value={testBypassCode}
+                    onChange={(event) => setTestBypassCode(event.target.value)}
+                    placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+                  />
+                  <span className="hint">
+                    Réservé aux tests : valide la commande immédiatement sans passer par
+                    Stripe. Sans effet sans un code correct.
+                  </span>
+                </div>
+              </fieldset>
+            </section>
+          ) : null}
         </div>
 
         <aside className="card summary">
