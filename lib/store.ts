@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -41,6 +41,7 @@ function normalize(state: State): State {
     products: state.products ?? [],
     orders: state.orders ?? [],
     promotions: state.promotions ?? [],
+    reviews: state.reviews ?? [],
     shippingZones: state.shippingZones ?? [],
     reservations: state.reservations ?? [],
     admins: state.admins ?? [],
@@ -57,10 +58,11 @@ function normalize(state: State): State {
  * pour ne pas ressusciter une zone ou un code promo qu'un admin aurait supprimé.
  */
 function migrate(state: State): State {
-  if (state.schemaVersion < CURRENT_SCHEMA_VERSION) {
-    // Zones de livraison élargies (30 km autour de 1435, Gembloux inclus) et code
-    // promo de démarrage, ajoutés seulement s'ils n'existent pas déjà (par code
-    // postal / par code promo) pour ne rien dupliquer ni rien restaurer après coup.
+  // v1 -> v2 : zones de livraison élargies (30 km autour de 1435, Gembloux inclus)
+  // et code promo de démarrage, ajoutés seulement s'ils n'existent pas déjà (par
+  // code postal / par code promo) pour ne rien dupliquer ni rien restaurer après
+  // coup — un admin a pu supprimer volontairement une zone.
+  if (state.schemaVersion < 2) {
     const existingPostalCodes = new Set(
       state.shippingZones.map((z) => z.postalCode.trim().toUpperCase()),
     );
@@ -72,8 +74,15 @@ function migrate(state: State): State {
     if (state.promotions.length === 0) {
       state.promotions.push(defaultPromotion());
     }
-    state.schemaVersion = CURRENT_SCHEMA_VERSION;
   }
+
+  // v2 -> v3 : avis clients. Le tableau lui-même est déjà créé par `normalize()`,
+  // cette étape ne sert qu'à porter le numéro de version.
+  if (state.schemaVersion < 3) {
+    state.reviews ??= [];
+  }
+
+  state.schemaVersion = CURRENT_SCHEMA_VERSION;
   return state;
 }
 

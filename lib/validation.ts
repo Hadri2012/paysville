@@ -105,3 +105,18 @@ export function normalizeLoose(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
 }
+
+/**
+ * Variante pour la recherche plein texte : m\u00eames r\u00e8gles (casse, accents) mais les
+ * s\u00e9parateurs deviennent des espaces au lieu de dispara\u00eetre. `normalizeLoose`
+ * collerait \u00ab porte casque \u00bb en \u00ab portecasque \u00bb, ce qui emp\u00eacherait de retrouver
+ * un mot isol\u00e9 au milieu d'un libell\u00e9.
+ */
+export function normalizeSearch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}

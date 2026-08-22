@@ -117,6 +117,24 @@ export interface Promotion {
   updatedAt: string;
 }
 
+/**
+ * Avis client sur un produit. Publié seulement après validation depuis
+ * l'administration (`approved`) : sans modération, un formulaire public ouvert
+ * est une porte d'entrée directe pour le spam.
+ */
+export interface Review {
+  id: string;
+  productId: string;
+  author: string;
+  /** Entier de 1 à 5. */
+  rating: number;
+  comment: string;
+  approved: boolean;
+  createdAt: string;
+  /** Renseigné quand un administrateur approuve ou rejette l'avis. */
+  moderatedAt: string | null;
+}
+
 export interface ShippingZone {
   id: string;
   postalCode: string;
@@ -174,6 +192,7 @@ export interface State {
   products: Product[];
   orders: Order[];
   promotions: Promotion[];
+  reviews: Review[];
   shippingZones: ShippingZone[];
   reservations: Reservation[];
   admins: AdminUser[];

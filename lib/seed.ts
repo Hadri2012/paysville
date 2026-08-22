@@ -187,7 +187,7 @@ export function initialState(): State {
   }));
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     settings: {
       shopName: "Hadrishop",
       currency: "EUR",
@@ -207,6 +207,7 @@ export function initialState(): State {
     products,
     orders: [],
     promotions: [defaultPromotion()],
+    reviews: [],
     shippingZones: defaultShippingZones(),
     reservations: [],
     admins: [],

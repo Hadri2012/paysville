@@ -1047,3 +1047,161 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
 @media print {
   .site-header, .site-footer, .btn { display: none !important; }
 }
+
+/* ------------------------- Recherche, avis, favoris --------------------- */
+
+/* Masqué visuellement mais lu par les lecteurs d'écran. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Barre de filtres de la boutique */
+.shop-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  margin-bottom: 0;
+}
+.shop-filters .field { margin: 0; }
+
+/* Lien Favoris de l'en-tête : même gabarit que le panier */
+.fav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px !important;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+  color: var(--ink) !important;
+  background: #fff;
+}
+.fav-link:hover { border-color: var(--danger); background: var(--danger-soft) !important; }
+
+/* Bouton cœur posé sur la vignette produit */
+.fav-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .15s ease, transform .15s ease, border-color .15s ease;
+}
+.fav-btn:hover { color: var(--danger); border-color: var(--danger); transform: scale(1.08); }
+.fav-btn.is-active { color: var(--danger); border-color: var(--danger); }
+
+/* Variante en ligne, à côté du titre sur la fiche produit */
+.fav-btn-inline { position: static; flex: 0 0 auto; }
+
+.product-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.product-title-row h1 { margin-bottom: 0; }
+
+/* Notes en étoiles */
+.stars { letter-spacing: 1px; line-height: 1; white-space: nowrap; }
+.star-on { color: #f5a524; }
+.star-off { color: var(--line-strong); }
+
+.rating-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Accroche générée pour les suggestions */
+.suggestion-reason {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Avis clients */
+.review-section { border-top: 1px solid var(--line); padding-top: 24px; }
+
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .review-layout { grid-template-columns: 1fr; }
+}
+
+.review-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+
+.review {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.review-body { margin: 0; white-space: pre-wrap; line-height: 1.6; }
+
+/* Sélecteur d'étoiles du formulaire */
+.rating-picker { border: 0; padding: 0; margin: 0; }
+.rating-picker legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 0;
+  margin-bottom: 6px;
+}
+.rating-choices { display: inline-flex; gap: 4px; }
+.rating-choices label {
+  cursor: pointer;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--line-strong);
+  transition: color .12s ease;
+}
+.rating-choices label.chosen { color: #f5a524; }
+.rating-choices input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.rating-choices label:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Modération des avis côté administration */
+.admin-review-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}

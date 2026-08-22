@@ -1,16 +1,21 @@
 import Link from "next/link";
 import { formatPrice } from "@/lib/money";
+import type { ReviewSummary } from "@/lib/reviews";
 import type { PublicProduct } from "@/lib/shop";
 import { AddToCartButton } from "./AddToCartButton";
+import { FavoriteButton } from "./FavoriteButton";
+import { RatingSummary } from "./Stars";
 
 export function ProductCard({
   product,
   currency,
   lowStockThreshold,
+  rating,
 }: {
   product: PublicProduct;
   currency: string;
   lowStockThreshold: number;
+  rating?: ReviewSummary;
 }) {
   const low = product.inStock && product.available <= lowStockThreshold;
 
@@ -32,6 +37,7 @@ export function ProductCard({
             Plus que {product.available} en stock
           </span>
         ) : null}
+        <FavoriteButton productId={product.id} name={product.name} />
       </div>
 
       <div className="product-body">
@@ -39,6 +45,9 @@ export function ProductCard({
         <h3 className="product-name">
           <Link href={`/produit/${product.slug}`}>{product.name}</Link>
         </h3>
+        {rating ? (
+          <RatingSummary average={rating.average} count={rating.count} size="0.9rem" />
+        ) : null}
         {product.description ? (
           <p className="product-desc">{product.description}</p>
         ) : null}

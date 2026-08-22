@@ -7,7 +7,7 @@ import {
 } from "./geo";
 import { productImage } from "./images";
 import type { Product, Promotion, ShippingZone, State } from "./types";
-import { normalizeLoose, type CartLineInput } from "./validation";
+import { normalizeLoose, normalizeSearch, type CartLineInput } from "./validation";
 
 /* -------------------------------------------------------------------------- */
 /* Stock et réservations                                                      */
@@ -101,6 +101,75 @@ export function listPublicProducts(state: State): PublicProduct[] {
     .filter((p) => p.active && !p.archived)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "fr"))
     .map((p) => toPublicProduct(state, p));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Recherche et tri du catalogue                                              */
+/* -------------------------------------------------------------------------- */
+
+export const SORT_OPTIONS = {
+  pertinence: "Pertinence",
+  "prix-croissant": "Prix croissant",
+  "prix-decroissant": "Prix décroissant",
+  nom: "Nom (A → Z)",
+  note: "Meilleures notes",
+} as const;
+
+export type SortKey = keyof typeof SORT_OPTIONS;
+
+export function isSortKey(value: unknown): value is SortKey {
+  return typeof value === "string" && value in SORT_OPTIONS;
+}
+
+/**
+ * Recherche plein texte simple : tous les mots saisis doivent apparaître quelque
+ * part dans la fiche (nom, description, référence, catégorie). Le « et » implicite
+ * évite qu'une requête à deux mots ramène tout le catalogue.
+ */
+export function searchProducts(products: PublicProduct[], query: string): PublicProduct[] {
+  const terms = normalizeSearch(query).split(" ").filter(Boolean);
+  if (terms.length === 0) return products;
+  return products.filter((product) => {
+    const haystack = normalizeSearch(
+      `${product.name} ${product.description} ${product.sku} ${product.category}`,
+    );
+    return terms.every((term) => haystack.includes(term));
+  });
+}
+
+/**
+ * Tri du catalogue. Les produits en rupture passent toujours en fin de liste :
+ * quel que soit le critère demandé, mettre en tête un article qu'on ne peut pas
+ * acheter n'aide personne.
+ */
+export function sortProducts(
+  products: PublicProduct[],
+  sort: SortKey,
+  ratings?: Map<string, { average: number | null; count: number }>,
+): PublicProduct[] {
+  const byName = (a: PublicProduct, b: PublicProduct) => a.name.localeCompare(b.name, "fr");
+  // « Pertinence » = l'ordre d'entrée, c'est-à-dire le classement défini par
+  // l'administrateur (`sortOrder`). On mémorise donc la position d'origine plutôt
+  // que de retomber sur un tri alphabétique qui l'écraserait.
+  const rank = new Map(products.map((product, index) => [product.id, index]));
+  const byRank = (a: PublicProduct, b: PublicProduct) =>
+    (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0);
+
+  const compare: Record<SortKey, (a: PublicProduct, b: PublicProduct) => number> = {
+    pertinence: byRank,
+    "prix-croissant": (a, b) => a.priceCents - b.priceCents || byName(a, b),
+    "prix-decroissant": (a, b) => b.priceCents - a.priceCents || byName(a, b),
+    nom: byName,
+    note: (a, b) => {
+      const scoreA = ratings?.get(a.id)?.average ?? -1;
+      const scoreB = ratings?.get(b.id)?.average ?? -1;
+      return scoreB - scoreA || byRank(a, b);
+    },
+  };
+
+  return [...products].sort(
+    (a, b) => Number(b.inStock) - Number(a.inStock) || compare[sort](a, b),
+  );
 }
 
 export function findProductByHandle(state: State, handle: string): Product | undefined {

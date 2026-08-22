@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { ProductPurchase } from "@/components/ProductPurchase";
+import { ReviewForm } from "@/components/ReviewForm";
+import { ReviewList } from "@/components/ReviewList";
+import { RatingSummary } from "@/components/Stars";
+import { suggestionsFor } from "@/lib/aiRecommendations";
 import { formatPrice } from "@/lib/money";
-import { findProductByHandle, listPublicProducts, toPublicProduct } from "@/lib/shop";
+import { approvedReviews, publicReviewView, summarize } from "@/lib/reviews";
+import { findProductByHandle, toPublicProduct } from "@/lib/shop";
 import { readState } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -30,9 +36,9 @@ export default async function ProductPage({ params }: Props) {
   if (!found || !found.active || found.archived) notFound();
 
   const product = toPublicProduct(state, found);
-  const related = listPublicProducts(state)
-    .filter((p) => p.id !== product.id && p.category === product.category)
-    .slice(0, 4);
+  const reviews = approvedReviews(state, product.id);
+  const rating = summarize(reviews);
+  const suggestions = await suggestionsFor(state, product);
 
   return (
     <main className="page">
@@ -51,7 +57,15 @@ export default async function ProductPage({ params }: Props) {
           <div className="stack">
             <div>
               <span className="product-sku">Référence {product.sku}</span>
-              <h1 style={{ marginTop: 6 }}>{product.name}</h1>
+              <div className="product-title-row">
+                <h1 style={{ marginTop: 6 }}>{product.name}</h1>
+                <FavoriteButton
+                  productId={product.id}
+                  name={product.name}
+                  className="fav-btn-inline"
+                />
+              </div>
+              <RatingSummary average={rating.average} count={rating.count} />
               <div className="price-tag">
                 {formatPrice(product.priceCents, state.settings.currency)}
               </div>
@@ -91,11 +105,11 @@ export default async function ProductPage({ params }: Props) {
           </div>
         </div>
 
-        {related.length > 0 ? (
+        {suggestions.length > 0 ? (
           <section>
-            <h2>Dans la même catégorie</h2>
+            <h2>Vous aimerez aussi</h2>
             <div className="product-grid">
-              {related.map((item) => (
+              {suggestions.map(({ product: item, reason }) => (
                 <article key={item.id} className="product-card">
                   <div className="product-media">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -103,12 +117,14 @@ export default async function ProductPage({ params }: Props) {
                     {!item.inStock ? (
                       <span className="badge badge-danger">Rupture de stock</span>
                     ) : null}
+                    <FavoriteButton productId={item.id} name={item.name} />
                   </div>
                   <div className="product-body">
                     <span className="product-sku">{item.sku}</span>
                     <h3 className="product-name">
                       <Link href={`/produit/${item.slug}`}>{item.name}</Link>
                     </h3>
+                    {reason ? <p className="suggestion-reason">{reason}</p> : null}
                     <div className="product-price">
                       {formatPrice(item.priceCents, state.settings.currency)}
                     </div>
@@ -126,6 +142,25 @@ export default async function ProductPage({ params }: Props) {
             </div>
           </section>
         ) : null}
+
+        <section className="review-section">
+          <div className="page-head">
+            <div>
+              <h2 style={{ marginBottom: 4 }}>Avis clients</h2>
+              <RatingSummary average={rating.average} count={rating.count} />
+            </div>
+          </div>
+
+          <div className="review-layout">
+            <div>
+              <ReviewList reviews={reviews.map(publicReviewView)} />
+            </div>
+            <aside className="card">
+              <h3 className="card-title">Donner mon avis</h3>
+              <ReviewForm productId={product.id} />
+            </aside>
+          </div>
+        </section>
       </div>
     </main>
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useCart } from "./CartProvider";
+import { useFavorites } from "./FavoritesProvider";
 
 const LINKS = [
   { href: "/", label: "Accueil" },
@@ -15,6 +16,7 @@ const LINKS = [
 export function SiteHeader() {
   const pathname = usePathname();
   const { count, hydrated } = useCart();
+  const { count: favoriteCount, hydrated: favoritesHydrated } = useFavorites();
   const [open, setOpen] = useState(false);
 
   // Le menu mobile se referme à chaque navigation. Ajustement pendant le rendu
@@ -62,6 +64,22 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
+          <Link
+            href="/favoris"
+            className="fav-link"
+            aria-current={isCurrent("/favoris") ? "page" : undefined}
+          >
+            <span aria-hidden="true">{favoritesHydrated && favoriteCount > 0 ? "♥" : "♡"}</span>
+            Favoris
+            {favoritesHydrated && favoriteCount > 0 ? (
+              <span className="cart-count">{favoriteCount}</span>
+            ) : null}
+            <span className="sr-only" style={{ position: "absolute", left: "-9999px" }}>
+              {favoritesHydrated
+                ? `${favoriteCount} produit${favoriteCount > 1 ? "s" : ""} en favoris`
+                : ""}
+            </span>
+          </Link>
           <Link href="/panier" className="cart-link" aria-current={isCurrent("/panier") ? "page" : undefined}>
             <span aria-hidden="true">🛒</span>
             Panier
