@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
+import { notifyOrderStatus } from "@/lib/notifications";
 import { restockOrder, setOrderStatus } from "@/lib/orders";
 import { transaction } from "@/lib/store";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/types";
@@ -19,9 +20,10 @@ export async function PATCH(request: Request, context: Context) {
     const { id } = await context.params;
     const body = await readJson(request);
 
-    const order = await transaction((state) => {
+    const { order, statusChanged } = await transaction((state) => {
       const found = state.orders.find((o) => o.id === id);
       if (!found) throw errors.orderNotFound();
+      let statusChanged = false;
 
       if (body.adminNote !== undefined) {
         found.adminNote = cleanString(body.adminNote, 1000);
@@ -54,11 +56,17 @@ export async function PATCH(request: Request, context: Context) {
             status,
             cleanString(body.statusNote, 200) || "Statut modifié depuis l'administration.",
           );
+          statusChanged = true;
         }
       }
 
-      return found;
+      return { order: found, statusChanged };
     });
+
+    // Hors transaction, et sans jamais faire échouer la mise à jour : le client est
+    // prévenu du nouveau statut (« prête », « expédiée »…). Les statuts qui ne le
+    // concernent pas sont ignorés côté gabarit.
+    if (statusChanged) await notifyOrderStatus(order, request);
 
     return jsonOk({ order });
   });

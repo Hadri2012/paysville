@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { notifyOrderPaid, notifyOrderStatus } from "./notifications";
 import { confirmOrderPayment, releaseOrder } from "./orders";
 import { sweepReservations } from "./shop";
 import { readState, transaction } from "./store";
@@ -10,10 +11,10 @@ export async function applySession(session: Stripe.Checkout.Session): Promise<Or
   const orderId = session.metadata?.orderId;
   if (!orderId) return null;
 
-  return transaction((state) => {
+  const result = await transaction<{ order: Order | null; justPaid: boolean }>((state) => {
     sweepReservations(state);
     const order = state.orders.find((o) => o.id === orderId);
-    if (!order) return null;
+    if (!order) return { order: null, justPaid: false };
 
     if (session.payment_status === "paid") {
       if (
@@ -24,24 +25,37 @@ export async function applySession(session: Stripe.Checkout.Session): Promise<Or
           `[hadrishop] montant Stripe (${session.amount_total}) différent du total calculé (${order.totalCents}) pour ${order.number}`,
         );
       }
-      return confirmOrderPayment(state, orderId, {
+      // `confirmOrderPayment` est idempotent : on retient donc si CETTE exécution est
+      // celle qui a fait basculer la commande, pour n'envoyer l'e-mail qu'une fois
+      // même si Stripe rejoue le webhook.
+      const wasPaid = order.paymentStatus === "paid";
+      const updated = confirmOrderPayment(state, orderId, {
         sessionId: session.id,
         paymentIntentId: paymentIntentId(session),
       });
+      return { order: updated, justPaid: Boolean(updated) && !wasPaid };
     }
 
     if (session.status === "expired") {
-      return releaseOrder(
-        state,
-        orderId,
-        "Session de paiement Stripe expirée : stock libéré.",
-        "canceled",
-      );
+      return {
+        order: releaseOrder(
+          state,
+          orderId,
+          "Session de paiement Stripe expirée : stock libéré.",
+          "canceled",
+        ),
+        justPaid: false,
+      };
     }
 
     order.stripeSessionId = session.id;
-    return order;
+    return { order, justPaid: false };
   });
+
+  // Hors transaction : l'appel réseau ne doit pas prolonger le verrou base.
+  if (result.justPaid && result.order) await notifyOrderPaid(result.order);
+
+  return result.order;
 }
 
 /**
@@ -68,9 +82,9 @@ export async function syncOrderFromStripe(orderNumber: string): Promise<Order | 
 }
 
 export async function markRefunded(paymentIntent: string): Promise<void> {
-  await transaction((state) => {
+  const refunded = await transaction<Order | null>((state) => {
     const order = state.orders.find((o) => o.stripePaymentIntentId === paymentIntent);
-    if (!order || order.paymentStatus === "refunded") return;
+    if (!order || order.paymentStatus === "refunded") return null;
     order.paymentStatus = "refunded";
     order.status = "refunded";
     order.updatedAt = new Date().toISOString();
@@ -79,7 +93,11 @@ export async function markRefunded(paymentIntent: string): Promise<void> {
       at: order.updatedAt,
       note: "Remboursement confirmé par Stripe.",
     });
+    return order;
   });
+
+  // `null` si la commande était déjà remboursée : le webhook rejoué ne renotifie pas.
+  if (refunded) await notifyOrderStatus(refunded);
 }
 
 export async function markPaymentFailed(orderId: string, reason: string): Promise<void> {
