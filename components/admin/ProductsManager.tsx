@@ -1,0 +1,497 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { centsToInput, formatPrice } from "@/lib/money";
+import { apiCall, type ApiResult } from "./apiClient";
+
+export interface AdminProductRow {
+  id: string;
+  sku: string;
+  slug: string;
+  name: string;
+  description: string;
+  priceCents: number;
+  stock: number;
+  available: number;
+  imageUrl: string;
+  resolvedImageUrl: string;
+  category: string;
+  sortOrder: number;
+  active: boolean;
+  archived: boolean;
+}
+
+interface Draft {
+  id: string | null;
+  sku: string;
+  name: string;
+  description: string;
+  price: string;
+  stock: string;
+  imageUrl: string;
+  category: string;
+  sortOrder: string;
+  active: boolean;
+}
+
+function emptyDraft(nextOrder: number): Draft {
+  return {
+    id: null,
+    sku: "",
+    name: "",
+    description: "",
+    price: "",
+    stock: "0",
+    imageUrl: "",
+    category: "",
+    sortOrder: String(nextOrder),
+    active: true,
+  };
+}
+
+function toDraft(product: AdminProductRow): Draft {
+  return {
+    id: product.id,
+    sku: product.sku,
+    name: product.name,
+    description: product.description,
+    price: centsToInput(product.priceCents),
+    stock: String(product.stock),
+    imageUrl: product.imageUrl,
+    category: product.category,
+    sortOrder: String(product.sortOrder),
+    active: product.active,
+  };
+}
+
+export function ProductsManager({
+  products,
+  currency,
+  lowStockThreshold,
+}: {
+  products: AdminProductRow[];
+  currency: string;
+  lowStockThreshold: number;
+}) {
+  const router = useRouter();
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(
+    null,
+  );
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [showArchived, setShowArchived] = useState(false);
+
+  const nextOrder =
+    products.reduce((max, product) => Math.max(max, product.sortOrder), 0) + 10;
+  const visible = products.filter((product) => showArchived || !product.archived);
+
+  const update = (key: keyof Draft, value: string | boolean) =>
+    setDraft((current) => (current ? { ...current, [key]: value } : current));
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!draft) return;
+    setBusy(true);
+    setMessage(null);
+    setFieldErrors({});
+
+    const payload = {
+      sku: draft.sku,
+      name: draft.name,
+      description: draft.description,
+      price: draft.price,
+      stock: draft.stock,
+      imageUrl: draft.imageUrl,
+      category: draft.category,
+      sortOrder: draft.sortOrder,
+      active: draft.active,
+    };
+
+    const result = draft.id
+      ? await apiCall(`/api/admin/products/${draft.id}`, "PATCH", payload)
+      : await apiCall("/api/admin/products", "POST", payload);
+
+    setBusy(false);
+    if (!result.ok) {
+      setMessage({ tone: "error", text: result.message });
+      if (result.details) setFieldErrors(result.details);
+      return;
+    }
+    setDraft(null);
+    setMessage({ tone: "success", text: "Produit enregistré." });
+    router.refresh();
+  };
+
+  const runAction = async (
+    action: () => Promise<ApiResult>,
+    successText: string,
+  ) => {
+    setBusy(true);
+    setMessage(null);
+    const result = await action();
+    setBusy(false);
+    if (!result.ok) {
+      setMessage({ tone: "error", text: result.message });
+      return;
+    }
+    setMessage({ tone: "success", text: successText });
+    router.refresh();
+  };
+
+  return (
+    <div className="stack-lg">
+      <div className="page-head">
+        <div>
+          <h1>Produits</h1>
+          <p>Créez, modifiez, activez ou archivez les produits de la boutique.</p>
+        </div>
+        <div className="btn-row">
+          <label className="checkbox small">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(event) => setShowArchived(event.target.checked)}
+            />
+            <span>Afficher les archivés</span>
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setDraft(emptyDraft(nextOrder));
+              setFieldErrors({});
+            }}
+          >
+            + Nouveau produit
+          </button>
+        </div>
+      </div>
+
+      {message ? (
+        <div
+          className={`alert alert-${message.tone === "success" ? "success" : "error"}`}
+          role="status"
+        >
+          <span>{message.text}</span>
+        </div>
+      ) : null}
+
+      {draft ? (
+        <form className="card stack" onSubmit={save}>
+          <h2 className="card-title">
+            {draft.id ? "Modifier le produit" : "Nouveau produit"}
+          </h2>
+
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="p-name">Nom *</label>
+              <input
+                id="p-name"
+                value={draft.name}
+                onChange={(event) => update("name", event.target.value)}
+                aria-invalid={Boolean(fieldErrors.name)}
+                required
+              />
+              {fieldErrors.name ? (
+                <span className="field-error">{fieldErrors.name}</span>
+              ) : null}
+            </div>
+
+            <div className="field">
+              <label htmlFor="p-sku">Référence *</label>
+              <input
+                id="p-sku"
+                value={draft.sku}
+                onChange={(event) => update("sku", event.target.value.toUpperCase())}
+                aria-invalid={Boolean(fieldErrors.sku)}
+                placeholder="P15"
+                required
+              />
+              {fieldErrors.sku ? (
+                <span className="field-error">{fieldErrors.sku}</span>
+              ) : null}
+            </div>
+
+            <div className="field field-full">
+              <label htmlFor="p-description">Description</label>
+              <textarea
+                id="p-description"
+                value={draft.description}
+                onChange={(event) => update("description", event.target.value)}
+                maxLength={2000}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="p-price">Prix (€) *</label>
+              <input
+                id="p-price"
+                value={draft.price}
+                onChange={(event) => update("price", event.target.value)}
+                inputMode="decimal"
+                placeholder="2,99"
+                aria-invalid={Boolean(fieldErrors.price)}
+                required
+              />
+              {fieldErrors.price ? (
+                <span className="field-error">{fieldErrors.price}</span>
+              ) : null}
+            </div>
+
+            <div className="field">
+              <label htmlFor="p-stock">Stock *</label>
+              <input
+                id="p-stock"
+                type="number"
+                min={0}
+                value={draft.stock}
+                onChange={(event) => update("stock", event.target.value)}
+                aria-invalid={Boolean(fieldErrors.stock)}
+                required
+              />
+              {fieldErrors.stock ? (
+                <span className="field-error">{fieldErrors.stock}</span>
+              ) : null}
+            </div>
+
+            <div className="field">
+              <label htmlFor="p-category">Catégorie</label>
+              <input
+                id="p-category"
+                value={draft.category}
+                onChange={(event) => update("category", event.target.value)}
+                list="categories"
+              />
+              <datalist id="categories">
+                {[...new Set(products.map((p) => p.category).filter(Boolean))].map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </div>
+
+            <div className="field">
+              <label htmlFor="p-order">Ordre d&apos;affichage</label>
+              <input
+                id="p-order"
+                type="number"
+                value={draft.sortOrder}
+                onChange={(event) => update("sortOrder", event.target.value)}
+              />
+            </div>
+
+            <div className="field field-full">
+              <label htmlFor="p-image">URL de l&apos;image</label>
+              <input
+                id="p-image"
+                value={draft.imageUrl}
+                onChange={(event) => update("imageUrl", event.target.value)}
+                placeholder="https://… ou /images/mon-produit.jpg"
+                aria-invalid={Boolean(fieldErrors.imageUrl)}
+              />
+              <span className="hint">
+                Laissez vide pour utiliser le visuel généré automatiquement. Une image
+                déposée dans le dossier <code>public/</code> s&apos;utilise avec un chemin
+                comme <code>/images/mon-produit.jpg</code>.
+              </span>
+              {fieldErrors.imageUrl ? (
+                <span className="field-error">{fieldErrors.imageUrl}</span>
+              ) : null}
+            </div>
+
+            <div className="field field-full">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={draft.active}
+                  onChange={(event) => update("active", event.target.checked)}
+                />
+                <span>Produit actif (visible dans la boutique)</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="btn-row">
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? (
+                <>
+                  <span className="spinner" aria-hidden="true" /> Enregistrement…
+                </>
+              ) : (
+                "Enregistrer"
+              )}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setDraft(null)}
+              disabled={busy}
+            >
+              Annuler
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th>Réf.</th>
+              <th className="num">Prix</th>
+              <th className="num">Stock</th>
+              <th className="num">Dispo.</th>
+              <th>État</th>
+              <th className="num">Ordre</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="center muted">
+                  Aucun produit.
+                </td>
+              </tr>
+            ) : (
+              visible.map((product) => (
+                <tr key={product.id}>
+                  <td>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={product.resolvedImageUrl}
+                        alt=""
+                        width={40}
+                        height={40}
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 8,
+                          objectFit: "cover",
+                          border: "1px solid var(--line)",
+                        }}
+                      />
+                      <div>
+                        <strong>{product.name}</strong>
+                        <div className="small muted">
+                          {product.category || "Sans catégorie"}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="mono small">{product.sku}</td>
+                  <td className="num">{formatPrice(product.priceCents, currency)}</td>
+                  <td className="num">{product.stock}</td>
+                  <td className="num">
+                    {product.available === 0 ? (
+                      <span className="badge badge-danger">0</span>
+                    ) : product.available <= lowStockThreshold ? (
+                      <span className="badge badge-warning">{product.available}</span>
+                    ) : (
+                      product.available
+                    )}
+                  </td>
+                  <td>
+                    {product.archived ? (
+                      <span className="badge">Archivé</span>
+                    ) : product.active ? (
+                      <span className="badge badge-success">Actif</span>
+                    ) : (
+                      <span className="badge badge-warning">Inactif</span>
+                    )}
+                  </td>
+                  <td className="num">{product.sortOrder}</td>
+                  <td>
+                    <div className="btn-row">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setDraft(toDraft(product));
+                          setFieldErrors({});
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                      >
+                        Modifier
+                      </button>
+                      {!product.archived ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() =>
+                            runAction(
+                              () =>
+                                apiCall(`/api/admin/products/${product.id}`, "PATCH", {
+                                  sku: product.sku,
+                                  name: product.name,
+                                  active: !product.active,
+                                }),
+                              product.active ? "Produit désactivé." : "Produit activé.",
+                            )
+                          }
+                        >
+                          {product.active ? "Désactiver" : "Activer"}
+                        </button>
+                      ) : null}
+                      {product.archived ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() =>
+                            runAction(
+                              () =>
+                                apiCall(`/api/admin/products/${product.id}`, "PATCH", {
+                                  archived: false,
+                                }),
+                              "Produit restauré.",
+                            )
+                          }
+                        >
+                          Restaurer
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                `Archiver « ${product.name} » ? Il disparaîtra de la boutique.`,
+                              )
+                            ) {
+                              return;
+                            }
+                            void runAction(
+                              () => apiCall(`/api/admin/products/${product.id}`, "DELETE"),
+                              "Produit archivé.",
+                            );
+                          }}
+                        >
+                          Archiver
+                        </button>
+                      )}
+                      <Link
+                        href={`/produit/${product.slug}`}
+                        className="btn btn-ghost btn-sm"
+                        target="_blank"
+                      >
+                        Voir
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
