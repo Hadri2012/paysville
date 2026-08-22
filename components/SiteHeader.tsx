@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useCart } from "./CartProvider";
 
 const LINKS = [
@@ -17,9 +17,14 @@ export function SiteHeader() {
   const { count, hydrated } = useCart();
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
+  // Le menu mobile se referme à chaque navigation. Ajustement pendant le rendu
+  // (et non dans un effet) : React ré-exécute le rendu sans passe d'affichage
+  // intermédiaire, donc pas de cascade de rendus.
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (lastPathname !== pathname) {
+    setLastPathname(pathname);
     setOpen(false);
-  }, [pathname]);
+  }
 
   const isCurrent = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);

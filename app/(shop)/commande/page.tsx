@@ -57,6 +57,9 @@ function CheckoutForm() {
   const requestId = useRef(0);
 
   useEffect(() => {
+    // Code promo et brouillon de formulaire viennent de localStorage : lecture
+    // après montage obligatoire (indisponible au rendu serveur).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation avec un stockage externe
     setPromoCode(readStoredPromo());
     try {
       const raw = window.localStorage.getItem(DRAFT_KEY);

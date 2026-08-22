@@ -61,6 +61,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Le panier vit dans localStorage, indisponible au rendu serveur. La lecture
+    // DOIT donc rester après le montage : l'anticiper produirait un rendu client
+    // différent du rendu serveur (erreur d'hydratation React).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation avec un stockage externe
     setItems(readStorage());
     setHydrated(true);
     const onStorage = (event: StorageEvent) => {

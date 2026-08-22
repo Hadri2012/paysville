@@ -17,7 +17,10 @@ export default function CartPage() {
   const requestId = useRef(0);
 
   useEffect(() => {
+    // Code promo mémorisé dans localStorage : lecture après montage obligatoire
+    // (indisponible au rendu serveur, sinon erreur d'hydratation).
     const stored = readStoredPromo();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation avec un stockage externe
     setPromoCode(stored);
     setPromoInput(stored);
   }, []);
@@ -53,6 +56,8 @@ export default function CartPage() {
   useEffect(() => {
     if (!hydrated) return;
     if (items.length === 0) {
+      // Panier vidé : on efface le devis serveur devenu caduc.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- remise à zéro après vidage du panier
       setQuote(null);
       setLoading(false);
       return;
