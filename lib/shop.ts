@@ -268,11 +268,27 @@ export interface PromotionResult {
 }
 
 /**
- * Ce client a-t-il déjà payé une commande avec ce code ?
+ * Ce client a-t-il déjà payé — ou est-il en train de payer — une commande avec
+ * ce code ?
  *
- * On ne regarde que les commandes réellement payées et non annulées : un panier
- * abandonné au paiement ne doit pas brûler le code, et une commande remboursée
- * rend son droit au client.
+ * Une commande encore en attente de paiement compte aussi, tant qu'elle n'a
+ * pas expiré ni été annulée : sans ça, deux commandes créées avant que l'une
+ * des deux ne soit confirmée payée passent toutes les deux ce contrôle (aucune
+ * n'étant encore « payée » aux yeux de l'autre), ce qui permet d'utiliser un
+ * code réservé à un usage par client autant de fois qu'on ouvre d'onglets de
+ * commande en parallèle. Le code promo est donc « réservé » exactement comme
+ * le stock l'est déjà (voir `state.reservations`) : ni l'un ni l'autre ne se
+ * limitent à la commande déjà payée.
+ *
+ * Ce n'est sûr que parce que `resolveShipping`/`buildQuote` en mode strict
+ * (le seul qui fait autorité, dans la transaction de création de commande)
+ * est toujours appelé juste après `sweepReservations` — une commande dont la
+ * réservation a expiré est donc déjà repassée à `canceled` avant d'arriver
+ * ici, et ne compte plus.
+ *
+ * Une commande annulée ou remboursée ne compte jamais : un panier abandonné
+ * ne doit pas brûler le code, et une commande remboursée rend son droit au
+ * client.
  */
 function hasUsedPromotion(state: State, promotionId: string, email: string): boolean {
   const needle = email.trim().toLowerCase();
@@ -280,7 +296,7 @@ function hasUsedPromotion(state: State, promotionId: string, email: string): boo
   return state.orders.some(
     (order) =>
       order.promotionId === promotionId &&
-      order.paymentStatus === "paid" &&
+      (order.paymentStatus === "paid" || order.paymentStatus === "pending") &&
       order.status !== "canceled" &&
       order.status !== "refunded" &&
       order.customer.email.trim().toLowerCase() === needle,

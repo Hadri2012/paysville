@@ -694,6 +694,58 @@ async function main() {
     anonymousQuote.discountCents === 60 && anonymousQuote.promoOncePerCustomer,
   );
 
+  // Course entre deux commandes créées avant que l'une des deux ne soit payée :
+  // sans compter les commandes encore en attente, les deux passeraient le
+  // contrôle (aucune n'étant encore « payée » aux yeux de l'autre), ce qui
+  // permettrait d'utiliser un code réservé à un usage par client autant de
+  // fois qu'on ouvre de commandes en parallèle sans attendre le paiement.
+  const p3 = state9.products.find((p) => p.sku === "P3")!;
+  const raceEmail = "course@example.org";
+  const pendingRaceOrder = await transaction((state) => {
+    const q = buildQuote(state, {
+      items: [{ productId: p3.id, quantity: 1 }],
+      promoCode: "TEST10",
+      customerEmail: raceEmail,
+      strict: true,
+    });
+    const order = createPendingOrder(state, {
+      quote: q,
+      identity: { ...identity, customer: { ...identity.customer, email: raceEmail } },
+    });
+    order.promotionId = oncePromoId;
+    return order;
+  });
+  const statePromoRace = await readState();
+  expectThrows(
+    "seconde commande, même client : refusée tant que la première commande n'a pas expiré (même non payée)",
+    () =>
+      buildQuote(statePromoRace, {
+        items: [{ productId: p3.id, quantity: 1 }],
+        promoCode: "TEST10",
+        customerEmail: raceEmail,
+        strict: true,
+      }),
+    "invalid_promo",
+  );
+
+  // La première commande expire sans jamais avoir été payée : le code redevient
+  // utilisable, exactement comme pour un panier simplement abandonné.
+  await transaction((state) => {
+    const reservation = state.reservations.find((r) => r.orderId === pendingRaceOrder.id)!;
+    reservation.expiresAt = new Date(Date.now() - 60_000).toISOString();
+  });
+  await transaction((state) => sweepReservations(state));
+  const statePromoRaceExpired = await readState();
+  check(
+    "commande expirée non payée : le code redevient utilisable pour le même client",
+    buildQuote(statePromoRaceExpired, {
+      items: [{ productId: p3.id, quantity: 1 }],
+      promoCode: "TEST10",
+      customerEmail: raceEmail,
+      strict: true,
+    }).discountCents > 0,
+  );
+
   console.log("\n== Fichiers numériques : utilitaires ==");
   check("extension lisible", fileExtension("modele-v2.STL") === "STL");
   check("extension absente", fileExtension("sans-extension") === "");
