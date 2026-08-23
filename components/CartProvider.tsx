@@ -146,7 +146,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((current) => current.filter((item) => item.productId !== productId));
   }, []);
 
-  const clear = useCallback(() => setItems([]), []);
+  const clear = useCallback(() => {
+    setItems([]);
+    // Écriture immédiate, indépendante de l'effet d'hydratation : sur un
+    // chargement de page complet (la redirection Stripe après paiement en est
+    // un), React monte les enfants avant le parent — `ClearCartOnMount`
+    // s'exécute donc avant l'effet d'hydratation de ce fournisseur, qui
+    // écraserait sinon un panier vidé mais pas encore persisté en relisant
+    // l'ancien contenu de `localStorage`.
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, "[]");
+      } catch {
+        /* stockage indisponible (navigation privée) */
+      }
+    }
+  }, []);
 
   const value = useMemo<CartContextValue>(
     () => ({

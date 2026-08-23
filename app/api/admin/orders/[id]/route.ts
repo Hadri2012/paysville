@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
-import { restockOrder, setOrderStatus } from "@/lib/orders";
+import { releasePromotionUse, restockOrder, setOrderStatus } from "@/lib/orders";
 import { transaction } from "@/lib/store";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/types";
 import { cleanString } from "@/lib/validation";
@@ -35,9 +35,11 @@ export async function PATCH(request: Request, context: Context) {
         }
         if (status !== found.status) {
           const wasClosed = CLOSED.includes(found.status);
-          // Annulation / remboursement d'une commande payée : le stock repart en rayon.
+          // Annulation / remboursement d'une commande payée : le stock repart en
+          // rayon, et le code promo éventuellement utilisé rend son utilisation.
           if (CLOSED.includes(status) && !wasClosed && found.paymentStatus === "paid") {
             restockOrder(state, found);
+            releasePromotionUse(state, found);
           }
           // Annulation avant paiement : on libère la réservation.
           if (CLOSED.includes(status) && found.paymentStatus === "pending") {
@@ -82,6 +84,7 @@ export async function DELETE(request: Request, context: Context) {
 
       if (order.paymentStatus === "paid" && !CLOSED.includes(order.status)) {
         restockOrder(state, order);
+        releasePromotionUse(state, order);
       }
 
       state.reservations = state.reservations.filter((r) => r.orderId !== id);

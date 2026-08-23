@@ -347,7 +347,9 @@ export function ShippingManager({
               }
             />
             <span className="hint">
-              Durée pendant laquelle le stock est bloqué le temps du paiement.
+              Durée pendant laquelle le stock est bloqué le temps du paiement. En
+              dessous de 30 minutes, la réservation dure quand même 30 minutes : la
+              page de paiement Stripe reste ouverte au moins ce temps-là.
             </span>
           </div>
           <div className="field">

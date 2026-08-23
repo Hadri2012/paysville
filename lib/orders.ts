@@ -4,6 +4,15 @@ import { availableStock, sweepReservations, type Quote } from "./shop";
 import type { Order, OrderStatus, State } from "./types";
 import type { CheckoutIdentity } from "./validation";
 
+/**
+ * Stripe impose une expiration de session Checkout d'au moins 30 minutes
+ * (voir `createCheckoutSession`) : la réservation de stock ne doit jamais
+ * expirer avant, sous peine d'annuler une commande dont la page de paiement
+ * Stripe est encore valide pour le client. Les deux durées partagent donc ce
+ * même plancher, quel que soit le réglage admin (`reservationMinutes`).
+ */
+export const MIN_RESERVATION_MINUTES = 30;
+
 /** Numéro lisible et unique : HAD-2026-000001 (compteur par année, stocké en base). */
 export function nextOrderNumber(state: State, now = new Date()): string {
   const year = String(now.getUTCFullYear());
@@ -83,7 +92,8 @@ export function createPendingOrder(state: State, input: CreateOrderInput): Order
       })),
     createdAt: iso,
     expiresAt: new Date(
-      now.getTime() + Math.max(5, state.settings.reservationMinutes) * 60_000,
+      now.getTime() +
+        Math.max(MIN_RESERVATION_MINUTES, state.settings.reservationMinutes) * 60_000,
     ).toISOString(),
     status: "active",
   });
@@ -196,6 +206,21 @@ export function restockOrder(state: State, order: Order): void {
     const product = state.products.find((p) => p.id === item.productId);
     if (product) product.stock += item.quantity;
   }
+}
+
+/**
+ * Rend au code promo l'utilisation consommée par cette commande, quand une
+ * commande payée est annulée ou remboursée.
+ *
+ * Symétrique de l'incrémentation dans `confirmOrderPayment` : sans ce retour,
+ * un code à nombre d'utilisations limité s'épuisait à cause de commandes qui,
+ * au final, n'ont jamais tenu — la même règle que `hasUsedPromotion` applique
+ * déjà côté client (« une commande remboursée rend son droit au client »).
+ */
+export function releasePromotionUse(state: State, order: Order): void {
+  if (!order.promotionId) return;
+  const promotion = state.promotions.find((p) => p.id === order.promotionId);
+  if (promotion) promotion.uses = Math.max(0, promotion.uses - 1);
 }
 
 export function findOrderByNumber(state: State, number: string): Order | undefined {

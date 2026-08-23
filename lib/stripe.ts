@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { errors } from "./errors";
+import { MIN_RESERVATION_MINUTES } from "./orders";
 import type { Order } from "./types";
 
 let client: Stripe | null = null;
@@ -70,8 +71,11 @@ export async function createCheckoutSession(
     },
   ];
 
-  // Stripe impose une expiration de session d'au moins 30 minutes.
-  const expiresInMinutes = Math.max(30, reservationMinutes);
+  // Stripe impose une expiration de session d'au moins 30 minutes — la même
+  // borne que la réservation de stock (voir `MIN_RESERVATION_MINUTES`), pour
+  // que la session de paiement ne survive jamais à la réservation qui la
+  // couvre.
+  const expiresInMinutes = Math.max(MIN_RESERVATION_MINUTES, reservationMinutes);
 
   return stripe.checkout.sessions.create({
     mode: "payment",

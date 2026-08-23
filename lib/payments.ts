@@ -1,5 +1,5 @@
 import type Stripe from "stripe";
-import { confirmOrderPayment, releaseOrder, restockOrder } from "./orders";
+import { confirmOrderPayment, releaseOrder, releasePromotionUse, restockOrder } from "./orders";
 import { sweepReservations } from "./shop";
 import { readState, transaction } from "./store";
 import { isStripeConfigured, paymentIntentId, retrieveSession } from "./stripe";
@@ -81,9 +81,11 @@ export async function markRefunded(paymentIntent: string, fullyRefunded: boolean
     if (!order || order.paymentStatus === "refunded") return;
     if (!fullyRefunded) return;
 
-    // Le stock réservé par cette commande retourne en rayon, comme lors d'une
-    // annulation ou d'un remboursement fait depuis l'administration.
+    // Le stock réservé par cette commande retourne en rayon, et le code promo
+    // éventuellement utilisé rend son utilisation — comme lors d'une annulation
+    // ou d'un remboursement fait depuis l'administration.
     restockOrder(state, order);
+    releasePromotionUse(state, order);
 
     order.paymentStatus = "refunded";
     order.status = "refunded";

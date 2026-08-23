@@ -12,7 +12,12 @@ import {
   orderDownloads,
 } from "../lib/digital";
 import { newId } from "../lib/ids";
-import { confirmOrderPayment, createPendingOrder, publicOrderView } from "../lib/orders";
+import {
+  MIN_RESERVATION_MINUTES,
+  confirmOrderPayment,
+  createPendingOrder,
+  publicOrderView,
+} from "../lib/orders";
 import { markRefunded } from "../lib/payments";
 import { cartSuggestions } from "../lib/recommendations";
 import {
@@ -270,6 +275,16 @@ async function main() {
     state2.products.find((p) => p.id === p4.id)!.stock === 2,
   );
   check("stock disponible tombé à 0 (réservé)", availableStock(state2, p4) === 0);
+  check(
+    "réservation d'au moins 30 min même avec un réglage admin plus court (15 min ici)",
+    state1.settings.reservationMinutes < MIN_RESERVATION_MINUTES &&
+      (() => {
+        const reservation = state2.reservations.find((r) => r.orderId === orderA.id)!;
+        const minutesLeft = (Date.parse(reservation.expiresAt) - Date.now()) / 60_000;
+        // Marge de quelques secondes pour le temps d'exécution du test lui-même.
+        return minutesLeft >= MIN_RESERVATION_MINUTES - 0.1;
+      })(),
+  );
   expectThrows(
     "un second client ne peut pas prendre le dernier exemplaire",
     () =>
@@ -373,6 +388,39 @@ async function main() {
   console.log("\n== Compteur de promotion ==");
   const promo = state5.promotions.find((p) => p.id === promoId)!;
   check("compteur d'utilisation à 0 (promo non utilisée)", promo.uses === 0);
+
+  const p7 = state5.products.find((p) => p.sku === "P7")!;
+  const promoOrder = await transaction((state) => {
+    const q = buildQuote(state, {
+      items: [{ productId: p7.id, quantity: 1 }],
+      promoCode: "TEST10",
+      postalCode: "1435",
+      city: "Corbais",
+      strict: true,
+    });
+    return createPendingOrder(state, { quote: q, identity });
+  });
+  await transaction((state) =>
+    confirmOrderPayment(state, promoOrder.id, { paymentIntentId: "pi_promo_selftest" }),
+  );
+  const statePromoUsed = await readState();
+  check(
+    "compteur incrémenté après paiement d'une commande avec ce code",
+    statePromoUsed.promotions.find((p) => p.id === promoId)!.uses === 1,
+  );
+
+  // Le remboursement (webhook Stripe) rend l'utilisation, comme l'annulation
+  // admin le fait déjà pour le stock — même garde-fou, même symétrie.
+  await markRefunded("pi_promo_selftest", true);
+  const statePromoReleased = await readState();
+  check(
+    "remboursement total : le code redevient utilisable (compteur revenu à 0)",
+    statePromoReleased.promotions.find((p) => p.id === promoId)!.uses === 0,
+  );
+  check(
+    "commande remboursée elle-même marquée refunded",
+    statePromoReleased.orders.find((o) => o.id === promoOrder.id)!.status === "refunded",
+  );
 
   console.log("\n== Avis clients ==");
   // `orderA` (p4) a été payée avec identity.customer.email ; `orderB` (p5) a été
