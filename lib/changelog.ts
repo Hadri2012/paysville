@@ -43,6 +43,13 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-23T22:40:00Z",
+    kind: "correctif",
+    title: "Protection renforcée contre les tentatives répétées",
+    details:
+      "La limitation du nombre d'essais (connexion administrateur, suivi de commande, modification d'adresse) pouvait être contournée en multipliant les tentatives d'une façon qui la faisait passer inaperçue. Un second verrou, qui ne dépend plus de cette même méthode, borne désormais chaque tentative visant un compte ou une commande précis, quelle que soit la manière dont les essais sont répartis.",
+  },
+  {
     at: "2026-08-23T21:20:00Z",
     kind: "correctif",
     title: "La limite globale d'un code promo pouvait être dépassée",

@@ -55,6 +55,26 @@ export function limit(request: Request, scope: string, max: number, windowMs: nu
   }
 }
 
+/**
+ * Limite de débit indépendante de l'adresse IP, par une clé propre à l'appelant
+ * (ex. l'e-mail visé, le numéro de commande interrogé).
+ *
+ * `limit()` seul ne suffit pas à protéger un point d'accès qui authentifie par
+ * un secret à deviner (mot de passe admin, numéro de commande) : il repose sur
+ * `X-Forwarded-For`, un en-tête que le client contrôle entièrement tant que rien
+ * en amont ne le réécrit. Changer sa valeur à chaque requête change de « client »
+ * aux yeux du limiteur et rend `limit()` inopérant — vérifié en conditions
+ * réelles (voir le correctif qui a introduit cette fonction). `limitKey` borne
+ * plutôt les tentatives visant une même cible, ce qui ne dépend d'aucun en-tête :
+ * deviner un numéro de commande ou un mot de passe reste couteux même en
+ * changeant d'adresse IP prétendue à chaque essai.
+ */
+export function limitKey(key: string, max: number, windowMs: number): void {
+  if (!rateLimit(key, max, windowMs)) {
+    throw errors.rateLimited();
+  }
+}
+
 /** URL publique du site, utilisée pour les redirections Stripe. */
 export function siteUrl(request?: Request): string {
   const configured = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;

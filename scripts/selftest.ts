@@ -20,6 +20,7 @@ import {
 } from "../lib/orders";
 import { markRefunded } from "../lib/payments";
 import { cartSuggestions } from "../lib/recommendations";
+import { rateLimit } from "../lib/ratelimit";
 import {
   approvedReviews,
   clearReviewReports,
@@ -93,6 +94,54 @@ const identity: CheckoutIdentity = {
 };
 
 async function main() {
+  console.log("\n== Limitation de débit ==");
+  // `rateLimit` compte les passages par clé : le mécanisme lui-même est correct
+  // (une clé donnée est bien bornée à `max` passages par fenêtre).
+  {
+    const key = `selftest-rl-${newId()}`;
+    let allowed = 0;
+    for (let i = 0; i < 5; i++) {
+      if (rateLimit(key, 3, 60_000)) allowed += 1;
+    }
+    check("rateLimit : autorise exactement `max` passages puis bloque", allowed === 3);
+  }
+  // Mais `limit()` (dans lib/http.ts) dérive sa clé de l'en-tête `X-Forwarded-For`,
+  // que l'appelant contrôle entièrement. Dix clés distinctes (dix adresses IP
+  // prétendues différentes) ne se limitent jamais entre elles : c'est exactement
+  // ce qui rendait `limit()` seul contournable sur /api/admin/login,
+  // /api/orders/track et /api/orders/update-address (reproduit en conditions
+  // réelles : quinze requêtes, chacune avec un `X-Forwarded-For` différent,
+  // passaient toutes malgré une limite déclarée de dix par minute).
+  {
+    const base = `selftest-rl-spoof-${newId()}`;
+    let allowed = 0;
+    for (let i = 0; i < 10; i++) {
+      if (rateLimit(`${base}-${i}`, 3, 60_000)) allowed += 1;
+    }
+    check(
+      "rateLimit : dix clés distinctes (IP prétendues) ne se limitent jamais entre elles",
+      allowed === 10,
+    );
+  }
+  // D'où `limitKey()` : une clé fixe, propre à la cible visée (l'e-mail pour la
+  // connexion admin, le numéro de commande ou l'e-mail pour le suivi/la
+  // modification d'adresse) plutôt que dérivée d'un en-tête. Même en faisant
+  // varier une clé « IP » à chaque tentative, la clé d'identité, elle, ne
+  // change pas : la limite reste donc effective.
+  {
+    const targetKey = `selftest-rl-target:victime@example.org`;
+    let allowed = 0;
+    for (let i = 0; i < 15; i++) {
+      // La clé reste `targetKey` quel que soit `i` : aucune variation d'IP
+      // prétendue n'entre dans son calcul, contrairement à `clientKey()`.
+      if (rateLimit(targetKey, 10, 60_000)) allowed += 1;
+    }
+    check(
+      "rateLimit sur une clé d'identité stable : bloque après `max`, quelle que soit l'IP prétendue",
+      allowed === 10,
+    );
+  }
+
   console.log("\n== Catalogue initial ==");
   const state0 = await readState();
   check("13 produits initiaux", state0.products.length === 13, `${state0.products.length}`);

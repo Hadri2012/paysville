@@ -1,5 +1,5 @@
 import { errors } from "@/lib/errors";
-import { handle, jsonOk, limit, readJson } from "@/lib/http";
+import { handle, jsonOk, limit, limitKey, readJson } from "@/lib/http";
 import { findOrderByNumber, publicOrderView } from "@/lib/orders";
 import { resolveShipping } from "@/lib/shop";
 import { readState, transaction } from "@/lib/store";
@@ -11,6 +11,12 @@ export const dynamic = "force-dynamic";
 /**
  * Met à jour l'adresse de livraison d'une commande non expédiée.
  * Authentification : numéro de commande + adresse e-mail du client.
+ *
+ * `limit()` seul ne suffit pas à empêcher de deviner cette paire (voir la même
+ * remarque dans `orders/track`) : réussir ici ne se contente pas d'exposer la
+ * commande, ça permet de détourner sa livraison vers une autre adresse. Les
+ * deux verrous par cible ci-dessous restent efficaces même en changeant
+ * d'adresse IP prétendue à chaque tentative.
  */
 export async function POST(request: Request) {
   return handle(async () => {
@@ -20,6 +26,8 @@ export async function POST(request: Request) {
     const number = cleanString(body.number, 40);
     const email = cleanString(body.email, 160).toLowerCase();
     if (!number || !email) throw errors.orderNotFound();
+    limitKey(`update-address-number:${number}`, 10, 60_000);
+    limitKey(`update-address-email:${email}`, 10, 60_000);
 
     const updatedOrder = await transaction((state) => {
       const order = findOrderByNumber(state, number);
