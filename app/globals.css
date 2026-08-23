@@ -1640,3 +1640,63 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
 .modal form {
   padding: 20px;
 }
+
+/* ------------------------ Nouveautés (page /nouveautes) ----------------- */
+
+.changelog-day {
+  font-size: 1rem;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0;
+  margin: 0 0 18px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.changelog { list-style: none; margin: 0; padding: 0; }
+
+.changelog-entry {
+  position: relative;
+  padding: 0 0 22px 26px;
+  border-left: 2px solid var(--line);
+}
+.changelog-entry:last-child { padding-bottom: 0; border-left-color: transparent; }
+.changelog-entry::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  background: #fff;
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+
+.changelog-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.changelog-time { font-size: 0.85rem; color: var(--muted); }
+
+.changelog-title { display: block; }
+.changelog-details { color: var(--ink-2); font-size: 0.93rem; margin: 2px 0 0; }
+
+.changelog-bullets {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
+.changelog-bullets li + li { margin-top: 4px; }
+
+.changelog-version { text-align: center; }
+.changelog-version code {
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 2px 6px;
+}

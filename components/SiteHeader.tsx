@@ -9,6 +9,7 @@ import { useFavorites } from "./FavoritesProvider";
 const LINKS = [
   { href: "/", label: "Accueil" },
   { href: "/boutique", label: "Boutique" },
+  { href: "/nouveautes", label: "Nouveautés" },
   { href: "/livraison", label: "Livraison" },
   { href: "/suivi", label: "Suivi de commande" },
 ];

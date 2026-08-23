@@ -34,6 +34,9 @@ export function SiteFooter({ contactEmail }: { contactEmail?: string }) {
               <li>
                 <Link href="/livraison">Zone de livraison</Link>
               </li>
+              <li>
+                <Link href="/nouveautes">Nouveautés du site</Link>
+              </li>
             </ul>
           </div>
 
