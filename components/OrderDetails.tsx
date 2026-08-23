@@ -229,11 +229,11 @@ export function OrderDetails({ order: initialOrder }: { order: PublicOrderView }
             {canEditAddress && (
               <button
                 type="button"
-                className="btn btn-sm btn-secondary"
+                className="btn btn-ghost"
                 onClick={() => setEditModalOpen(true)}
                 aria-label="Modifier l'adresse"
               >
-                ✎
+                ✎ Modifier
               </button>
             )}
           </div>
