@@ -7,17 +7,33 @@ export interface ReviewSummary {
   count: number;
 }
 
+const PROFANITIES = [
+  "connard", "connasse", "putain", "merde", "salaud", "enfoiré",
+  "con", "bite", "cul", "chiant", "nul", "pourri", "débile",
+  "imbécile", "crétin", "idiot", "con de", "fils de pute",
+];
+
+function containsProfanity(text: string): boolean {
+  const normalized = text.toLowerCase().replace(/[^a-zàâäéèêëïîôöùûüœæ ]/g, " ");
+  return PROFANITIES.some((word) => new RegExp(`\\b${word}\\b`).test(normalized));
+}
+
 function isSpam(author: string, comment: string): boolean {
-  const text = (author + " " + comment).toLowerCase();
+  const text = author + " " + comment;
+
+  // Contient des vulgarités
+  if (containsProfanity(text)) return true;
+
+  const lowerText = text.toLowerCase();
 
   // Trop de caractères répétés (ex: "aaaaaaa")
-  if (/(.)\1{5,}/.test(text)) return true;
+  if (/(.)\1{5,}/.test(lowerText)) return true;
 
   // Contient "http" ou "https" (liens dans les avis = suspect)
-  if (/https?:/.test(text)) return true;
+  if (/https?:/.test(lowerText)) return true;
 
   // Contient du charabia (15+ caractères spéciaux non-accentués consécutifs)
-  if (/[!@#$%^&*()_+=\[\]{};':"\\|<>,./?]{15,}/.test(text)) return true;
+  if (/[!@#$%^&*()_+=\[\]{};':"\\|<>,./?]{15,}/.test(lowerText)) return true;
 
   return false;
 }
