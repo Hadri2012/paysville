@@ -80,6 +80,12 @@ export const errors = {
       "Aucune commande ne correspond à ces informations.",
       404,
     ),
+  orderNotEditable: () =>
+    new AppError(
+      "order_not_editable",
+      "Cette commande ne peut plus être modifiée. Les modifications ne sont possibles que jusqu'à la préparation.",
+      409,
+    ),
   downloadNotAvailable: () =>
     new AppError(
       "download_not_available",

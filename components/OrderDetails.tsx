@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { fileExtension, formatBytes } from "@/lib/digital";
 import { formatPrice } from "@/lib/money";
 import type { PublicOrderView } from "@/lib/orders";
@@ -8,6 +11,7 @@ import {
   type PaymentStatus,
 } from "@/lib/types";
 import { OrderTimeline } from "./OrderTimeline";
+import { EditAddressModal } from "./EditAddressModal";
 
 export function StatusBadge({ status }: { status: OrderStatus }) {
   const tone: Record<OrderStatus, string> = {
@@ -103,9 +107,15 @@ function Downloads({ order }: { order: PublicOrderView }) {
   );
 }
 
-export function OrderDetails({ order }: { order: PublicOrderView }) {
+export function OrderDetails({ order: initialOrder }: { order: PublicOrderView }) {
+  const [order, setOrder] = useState(initialOrder);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const digitalOnly =
     order.items.length > 0 && order.items.every((item) => item.kind === "digital");
+
+  const canEditAddress = ["awaiting_payment", "paid", "preparing", "ready"].includes(
+    order.status,
+  );
 
   return (
     <div className="stack-lg">
@@ -205,7 +215,28 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
 
       <div className="detail-grid">
         <section className="card">
-          <h3 className="card-title">{digitalOnly ? "Facturation" : "Livraison"}</h3>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <h3 className="card-title" style={{ margin: 0 }}>
+              {digitalOnly ? "Facturation" : "Livraison"}
+            </h3>
+            {canEditAddress && (
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => setEditModalOpen(true)}
+                aria-label="Modifier l'adresse"
+              >
+                ✎
+              </button>
+            )}
+          </div>
           <p className="small" style={{ margin: 0 }}>
             {order.customer.firstName} {order.customer.lastName}
             <br />
@@ -233,6 +264,14 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
           <OrderTimeline status={order.status} statusHistory={order.statusHistory} />
         </section>
       </div>
+
+      {editModalOpen && (
+        <EditAddressModal
+          order={order}
+          onAddressUpdated={setOrder}
+          onClose={() => setEditModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
