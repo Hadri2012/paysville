@@ -1,6 +1,5 @@
 import { deleteAsset, saveAsset } from "@/lib/assets";
 import { requireAdmin } from "@/lib/auth";
-import { decodeUpload, newAssetId } from "@/lib/digital";
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
 import { transaction } from "@/lib/store";
@@ -9,6 +8,7 @@ import {
   MAX_DIGITAL_FILE_BYTES,
   type DigitalFile,
 } from "@/lib/types";
+import { decodeUpload, newAssetId } from "@/lib/uploads";
 import { cleanString } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";

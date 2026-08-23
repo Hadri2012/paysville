@@ -6,14 +6,10 @@
  */
 import { deleteAsset, readAsset, saveAsset } from "../lib/assets";
 import {
-  decodeUpload,
   fileExtension,
   fileFormats,
   formatBytes,
-  isGlbFile,
-  newAssetId,
   orderDownloads,
-  sanitizeFileName,
 } from "../lib/digital";
 import { newId } from "../lib/ids";
 import { confirmOrderPayment, createPendingOrder, publicOrderView } from "../lib/orders";
@@ -39,6 +35,7 @@ import {
 } from "../lib/shop";
 import { readState, transaction } from "../lib/store";
 import { MAX_REVIEW_PHOTOS, type Product } from "../lib/types";
+import { decodeUpload, isGlbFile, newAssetId, sanitizeFileName } from "../lib/uploads";
 import { parseCheckoutIdentity, type CheckoutIdentity } from "../lib/validation";
 
 let failures = 0;

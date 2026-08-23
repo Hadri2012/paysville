@@ -1,10 +1,10 @@
 import { deleteAsset, saveAsset } from "@/lib/assets";
 import { requireAdmin } from "@/lib/auth";
-import { decodeUpload, isGlbFile, newAssetId } from "@/lib/digital";
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
 import { transaction } from "@/lib/store";
 import { MAX_MODEL3D_BYTES } from "@/lib/types";
+import { decodeUpload, isGlbFile, newAssetId } from "@/lib/uploads";
 
 export const dynamic = "force-dynamic";
 
