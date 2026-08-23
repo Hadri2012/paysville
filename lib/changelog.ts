@@ -43,6 +43,19 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-23T19:47:00Z",
+    kind: "correctif",
+    title: "Quatre bugs corrigés : livraison, remboursement, adresse",
+    details:
+      "Un audit du code a révélé plusieurs anomalies discrètes, corrigées et verrouillées par de nouveaux tests automatiques.",
+    bullets: [
+      "Une zone de livraison désactivée par l'admin, ou restreinte à certaines communes, pouvait quand même accepter des commandes via le calcul automatique par distance.",
+      "Un remboursement fait depuis Stripe (plutôt que depuis l'administration) ne remettait pas le stock en rayon.",
+      "Un remboursement partiel (ex. un avoir sur les frais de port) clôturait toute la commande et coupait l'accès aux fichiers déjà payés, comme un remboursement total.",
+      "Modifier son adresse depuis le suivi de commande faisait disparaître, à l'écran seulement, les liens de téléchargement des fichiers déjà payés.",
+    ],
+  },
+  {
     at: "2026-08-23T18:21:00Z",
     kind: "amelioration",
     title: "Bouton « Modifier » plus visible sur le suivi de commande",
