@@ -46,7 +46,9 @@ export default async function AdminOrderPage({
 
       <div className="cart-layout">
         <div>
-          <OrderDetails order={publicOrderView(order)} />
+          {/* `state` : l'administration voit les mêmes liens de téléchargement que
+              le client, ce qui permet de vérifier ce qui lui a été remis. */}
+          <OrderDetails order={publicOrderView(order, state)} />
         </div>
 
         <aside className="stack">

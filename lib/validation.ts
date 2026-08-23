@@ -56,8 +56,23 @@ export interface CheckoutIdentity {
   marketing: boolean;
 }
 
+export interface CheckoutIdentityOptions {
+  /**
+   * Adresse postale exigée. Fausse pour une commande entièrement composée de
+   * fichiers téléchargeables : il n'y a rien à expédier, réclamer une rue et un
+   * numéro de maison n'aurait aucun objet. Les coordonnées (nom, e-mail,
+   * téléphone) restent obligatoires dans tous les cas — elles servent à
+   * retrouver la commande et à donner accès aux téléchargements.
+   */
+  requireAddress?: boolean;
+}
+
 /** Validation serveur complète du formulaire de commande. */
-export function parseCheckoutIdentity(body: Record<string, unknown>): CheckoutIdentity {
+export function parseCheckoutIdentity(
+  body: Record<string, unknown>,
+  options: CheckoutIdentityOptions = {},
+): CheckoutIdentity {
+  const requireAddress = options.requireAddress ?? true;
   const fieldErrors: Record<string, string> = {};
 
   const firstName = cleanString(body.firstName, 60);
@@ -76,13 +91,18 @@ export function parseCheckoutIdentity(body: Record<string, unknown>): CheckoutId
   if (lastName.length < 2) fieldErrors.lastName = "Nom requis (2 caractères minimum).";
   if (!EMAIL_RE.test(email)) fieldErrors.email = "Adresse e-mail invalide.";
   if (!PHONE_RE.test(phone)) fieldErrors.phone = "Numéro de téléphone invalide.";
-  if (street.length < 2) fieldErrors.street = "Rue requise.";
-  if (streetNumber.length < 1) fieldErrors.streetNumber = "Numéro requis.";
-  if (!/^[0-9A-Z][0-9A-Z \-]{2,9}$/.test(postalCode)) {
+  if (requireAddress) {
+    if (street.length < 2) fieldErrors.street = "Rue requise.";
+    if (streetNumber.length < 1) fieldErrors.streetNumber = "Numéro requis.";
+    if (!/^[0-9A-Z][0-9A-Z \-]{2,9}$/.test(postalCode)) {
+      fieldErrors.postalCode = "Code postal invalide.";
+    }
+    if (city.length < 2) fieldErrors.city = "Ville ou village requis.";
+    if (country.length < 2) fieldErrors.country = "Pays requis.";
+  } else if (postalCode && !/^[0-9A-Z][0-9A-Z \-]{2,9}$/.test(postalCode)) {
+    // Facultatif, mais s'il est renseigné il doit rester exploitable.
     fieldErrors.postalCode = "Code postal invalide.";
   }
-  if (city.length < 2) fieldErrors.city = "Ville ou village requis.";
-  if (country.length < 2) fieldErrors.country = "Pays requis.";
 
   if (Object.keys(fieldErrors).length > 0) {
     throw errors.invalidCustomerData(fieldErrors);

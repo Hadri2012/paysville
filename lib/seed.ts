@@ -33,6 +33,8 @@ export function defaultPromotion(): Promotion {
     minSubtotalCents: null,
     maxUses: null,
     uses: 0,
+    // Code de bienvenue : une remise par client, pas une remise permanente.
+    oncePerCustomer: true,
     archived: false,
     createdAt: now,
     updatedAt: now,
@@ -182,6 +184,9 @@ export function initialState(): State {
     category: entry.category,
     sortOrder: (index + 1) * 10,
     archived: false,
+    kind: "physical",
+    digitalFiles: [],
+    model3d: null,
     createdAt: now,
     updatedAt: now,
   }));
@@ -191,7 +196,10 @@ export function initialState(): State {
     settings: {
       shopName: "Hadrishop",
       currency: "EUR",
-      contactEmail: "",
+      // Adresse de contact affichée dans le pied de page. Modifiable à tout moment
+      // depuis Administration → Paramètres : cette valeur ne sert qu'au premier
+      // démarrage, sur une base encore vide.
+      contactEmail: "hadrienw@icloud.com",
       defaultShippingFeeCents: 0,
       freeShippingThresholdCents: null,
       lowStockThreshold: 2,

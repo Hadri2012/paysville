@@ -1028,6 +1028,84 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
   background: var(--brand);
 }
 
+/* « Complétez votre panier » */
+.cart-suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.cart-suggestion {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.cart-suggestion-media {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.cart-suggestion-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cart-suggestion-body { display: grid; gap: 6px; min-width: 0; }
+.cart-suggestion-body > a { font-weight: 600; }
+.cart-suggestion-body .product-price { margin: 0; }
+
+/* Progression visuelle d'une commande (page de suivi) */
+.order-timeline { list-style: none; margin: 0; padding: 0; }
+.order-step {
+  position: relative;
+  padding: 0 0 18px 26px;
+  border-left: 2px solid var(--line);
+}
+.order-step:last-child { padding-bottom: 0; border-left-color: transparent; }
+.order-step::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: #fff;
+}
+.order-step.is-done { border-left-color: var(--brand); }
+.order-step.is-done::before {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+.order-step.is-current::before {
+  border-color: var(--brand);
+  background: #fff;
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+.order-step.is-upcoming { color: var(--muted); }
+.order-step.is-upcoming strong { font-weight: 500; }
+
+.order-step-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.order-step-desc { color: var(--ink-2); margin-top: 2px; }
+.order-step.is-upcoming .order-step-desc { color: var(--muted); }
+.order-step-note { color: var(--muted); font-style: italic; margin-top: 2px; }
+
+/* Commande annulée ou remboursée : la dernière étape rompt le parcours. */
+.order-timeline-stopped .order-step:last-child::before {
+  border-color: var(--danger);
+  background: var(--danger);
+  box-shadow: none;
+}
+.order-timeline-stopped .order-step:last-child .order-step-desc { color: var(--danger); }
+
 /* -------------------------- Contenu éditorial --------------------------- */
 
 .prose h2 { margin-top: 1.8em; }
@@ -1171,6 +1249,117 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
 }
 .review-body { margin: 0; white-space: pre-wrap; line-height: 1.6; }
 
+/* Réponse de la boutique sous un avis */
+.review-reply {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.review-reply .review-body { margin-top: 4px; font-size: 0.93rem; }
+
+/* Votes d'utilité et signalement */
+.review-votes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.review-vote-buttons { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* Le signalement reste discret : c'est un recours, pas une action courante. */
+.review-report { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
+.review-report:hover:not(:disabled) { color: var(--danger); }
+
+/* Photos jointes à un avis */
+.review-photos {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.review-photos li { margin: 0; }
+.review-photos img {
+  width: 104px;
+  height: 104px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  display: block;
+}
+
+/* Sélection des photos dans le formulaire */
+.review-photo-picks {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.review-photo-picks li { display: grid; gap: 2px; justify-items: center; margin: 0; }
+.review-photo-picks img {
+  width: 76px;
+  height: 76px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  display: block;
+}
+
+/* Points le plus souvent cités */
+.review-themes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.review-themes ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+.review-themes li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 0.86rem;
+  margin: 0;
+}
+.review-theme-word::first-letter { text-transform: uppercase; }
+.review-theme-count {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Intitulé de champ sans contrôle associé (groupe de boutons, aperçus). */
+.label-like {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+
 /* Sélecteur d'étoiles du formulaire */
 .rating-picker { border: 0; padding: 0; margin: 0; }
 .rating-picker legend {
@@ -1204,4 +1393,136 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
   align-items: flex-start;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------ */
+/* Produits numériques et aperçu 3D                                    */
+/* ------------------------------------------------------------------ */
+
+.badge-3d {
+  background: #1f2937;
+  color: #fff;
+}
+
+/* Pastille de format (STL, PDF…) : largeur fixe pour que les listes de
+   fichiers restent alignées quelle que soit la longueur de l'extension. */
+.file-format {
+  display: inline-block;
+  min-width: 46px;
+  text-align: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.digital-files {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface-2, transparent);
+}
+.digital-files ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  display: grid;
+  gap: 8px;
+}
+.digital-files li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.download-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.download-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.admin-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: grid;
+  gap: 8px;
+}
+.admin-file-list > li,
+.admin-file-list > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.admin-file-name {
+  font-weight: 600;
+  word-break: break-word;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.product-assets {
+  padding: 6px 2px 2px;
+}
+.product-assets section + section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+/* Visionneuse 3D : la scène occupe un rapport fixe pour éviter que le
+   canvas ne saute de taille pendant le chargement du modèle. */
+.model3d {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.model3d-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.model3d-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  min-height: 260px;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .9), transparent 60%),
+    linear-gradient(160deg, #eef2f7, #dfe6ef);
+  touch-action: none;
+}
+.model3d-stage canvas { display: block; width: 100%; height: 100%; }
+.model3d-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: .9rem;
 }

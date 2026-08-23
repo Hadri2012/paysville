@@ -43,4 +43,6 @@ next-env.d.ts
 # hadrishop local data (file driver)
 /.data/
 /.selftest/
+/.livetest/
+/.migtest/
 !.env.example

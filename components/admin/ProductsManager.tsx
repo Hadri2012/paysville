@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { centsToInput, formatPrice } from "@/lib/money";
+import type { ProductKind } from "@/lib/types";
 import { apiCall, type ApiResult } from "./apiClient";
+import { ProductAssets, type AdminProductFile } from "./ProductAssets";
 
 export interface AdminProductRow {
   id: string;
@@ -21,6 +23,9 @@ export interface AdminProductRow {
   sortOrder: number;
   active: boolean;
   archived: boolean;
+  kind: ProductKind;
+  digitalFiles: AdminProductFile[];
+  model3d: AdminProductFile | null;
 }
 
 interface Draft {
@@ -34,6 +39,7 @@ interface Draft {
   category: string;
   sortOrder: string;
   active: boolean;
+  kind: ProductKind;
 }
 
 function emptyDraft(nextOrder: number): Draft {
@@ -48,6 +54,7 @@ function emptyDraft(nextOrder: number): Draft {
     category: "",
     sortOrder: String(nextOrder),
     active: true,
+    kind: "physical",
   };
 }
 
@@ -63,6 +70,7 @@ function toDraft(product: AdminProductRow): Draft {
     category: product.category,
     sortOrder: String(product.sortOrder),
     active: product.active,
+    kind: product.kind,
   };
 }
 
@@ -83,6 +91,8 @@ export function ProductsManager({
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [showArchived, setShowArchived] = useState(false);
+  // Produit dont le panneau « fichiers et 3D » est déplié (un seul à la fois).
+  const [assetsFor, setAssetsFor] = useState<string | null>(null);
 
   const nextOrder =
     products.reduce((max, product) => Math.max(max, product.sortOrder), 0) + 10;
@@ -108,6 +118,7 @@ export function ProductsManager({
       category: draft.category,
       sortOrder: draft.sortOrder,
       active: draft.active,
+      kind: draft.kind,
     };
 
     const result = draft.id
@@ -120,8 +131,23 @@ export function ProductsManager({
       if (result.details) setFieldErrors(result.details);
       return;
     }
+    const savedId =
+      draft.id ??
+      (result.ok && typeof result.data.product === "object" && result.data.product
+        ? ((result.data.product as { id?: string }).id ?? null)
+        : null);
+    const needsFiles = draft.kind === "digital";
+
     setDraft(null);
-    setMessage({ tone: "success", text: "Produit enregistré." });
+    setMessage({
+      tone: "success",
+      text: needsFiles
+        ? "Produit enregistré. Ajoutez maintenant les fichiers vendus via « Fichiers / 3D »."
+        : "Produit enregistré.",
+    });
+    // Un produit numérique sans fichier n'est pas vendable : on ouvre directement
+    // le panneau qui permet d'en joindre.
+    if (needsFiles && savedId) setAssetsFor(savedId);
     router.refresh();
   };
 
@@ -242,20 +268,46 @@ export function ProductsManager({
             </div>
 
             <div className="field">
-              <label htmlFor="p-stock">Stock *</label>
-              <input
-                id="p-stock"
-                type="number"
-                min={0}
-                value={draft.stock}
-                onChange={(event) => update("stock", event.target.value)}
-                aria-invalid={Boolean(fieldErrors.stock)}
-                required
-              />
-              {fieldErrors.stock ? (
-                <span className="field-error">{fieldErrors.stock}</span>
-              ) : null}
+              <label htmlFor="p-kind">Type de produit *</label>
+              <select
+                id="p-kind"
+                value={draft.kind}
+                onChange={(event) => update("kind", event.target.value)}
+              >
+                <option value="physical">Objet à livrer</option>
+                <option value="digital">Fichier à télécharger</option>
+              </select>
+              <span className="hint">
+                {draft.kind === "digital"
+                  ? "Ni stock ni frais de livraison : l'acheteur télécharge les fichiers dès le paiement confirmé."
+                  : "Produit expédié : stock décompté et frais de livraison selon la zone."}
+              </span>
             </div>
+
+            {draft.kind === "digital" ? (
+              <div className="field">
+                <label>Stock</label>
+                <p className="hint" style={{ marginTop: 8 }}>
+                  Sans objet pour un fichier : il reste disponible indéfiniment.
+                </p>
+              </div>
+            ) : (
+              <div className="field">
+                <label htmlFor="p-stock">Stock *</label>
+                <input
+                  id="p-stock"
+                  type="number"
+                  min={0}
+                  value={draft.stock}
+                  onChange={(event) => update("stock", event.target.value)}
+                  aria-invalid={Boolean(fieldErrors.stock)}
+                  required
+                />
+                {fieldErrors.stock ? (
+                  <span className="field-error">{fieldErrors.stock}</span>
+                ) : null}
+              </div>
+            )}
 
             <div className="field">
               <label htmlFor="p-category">Catégorie</label>
@@ -341,6 +393,7 @@ export function ProductsManager({
             <tr>
               <th>Produit</th>
               <th>Réf.</th>
+              <th>Type</th>
               <th className="num">Prix</th>
               <th className="num">Stock</th>
               <th className="num">Dispo.</th>
@@ -352,13 +405,14 @@ export function ProductsManager({
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={8} className="center muted">
+                <td colSpan={9} className="center muted">
                   Aucun produit.
                 </td>
               </tr>
             ) : (
               visible.map((product) => (
-                <tr key={product.id}>
+                <Fragment key={product.id}>
+                <tr>
                   <td>
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -384,10 +438,38 @@ export function ProductsManager({
                     </div>
                   </td>
                   <td className="mono small">{product.sku}</td>
+                  <td>
+                    {product.kind === "digital" ? (
+                      <span className="badge badge-info">
+                        Fichier ×{product.digitalFiles.length}
+                      </span>
+                    ) : (
+                      <span className="badge">Objet</span>
+                    )}
+                    {product.model3d ? (
+                      <span className="badge badge-3d" title="Aperçu 3D disponible">
+                        🧊 3D
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="num">{formatPrice(product.priceCents, currency)}</td>
-                  <td className="num">{product.stock}</td>
                   <td className="num">
-                    {product.available === 0 ? (
+                    {product.kind === "digital" ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      product.stock
+                    )}
+                  </td>
+                  <td className="num">
+                    {product.kind === "digital" ? (
+                      product.digitalFiles.length > 0 ? (
+                        <span className="badge badge-success">∞</span>
+                      ) : (
+                        <span className="badge badge-danger" title="Aucun fichier joint">
+                          0
+                        </span>
+                      )
+                    ) : product.available === 0 ? (
                       <span className="badge badge-danger">0</span>
                     ) : product.available <= lowStockThreshold ? (
                       <span className="badge badge-warning">{product.available}</span>
@@ -417,6 +499,18 @@ export function ProductsManager({
                         }}
                       >
                         Modifier
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        aria-expanded={assetsFor === product.id}
+                        onClick={() =>
+                          setAssetsFor((current) =>
+                            current === product.id ? null : product.id,
+                          )
+                        }
+                      >
+                        Fichiers / 3D
                       </button>
                       {!product.archived ? (
                         <button
@@ -487,6 +581,19 @@ export function ProductsManager({
                     </div>
                   </td>
                 </tr>
+                {assetsFor === product.id ? (
+                  <tr>
+                    <td colSpan={9}>
+                      <ProductAssets
+                        productId={product.id}
+                        productName={product.name}
+                        files={product.digitalFiles}
+                        model3d={product.model3d}
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               ))
             )}
           </tbody>

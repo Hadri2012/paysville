@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AddToCartButton } from "@/components/AddToCartButton";
 import { useCart } from "@/components/CartProvider";
 import { readStoredPromo, storePromo } from "@/lib/clientPromo";
 import { formatPrice } from "@/lib/money";
-import type { Quote } from "@/lib/shop";
+import type { PublicProduct, Quote } from "@/lib/shop";
 
 export default function CartPage() {
   const { items, setQuantity, remove, hydrated, notify } = useCart();
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [suggestions, setSuggestions] = useState<PublicProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [promoInput, setPromoInput] = useState("");
@@ -42,6 +44,7 @@ export default function CartPage() {
         return;
       }
       setQuote(data.quote as Quote);
+      setSuggestions((data.suggestions ?? []) as PublicProduct[]);
     } catch {
       if (id === requestId.current) {
         setError(
@@ -59,6 +62,7 @@ export default function CartPage() {
       // Panier vidé : on efface le devis serveur devenu caduc.
       // eslint-disable-next-line react-hooks/set-state-in-effect -- remise à zéro après vidage du panier
       setQuote(null);
+      setSuggestions([]);
       setLoading(false);
       return;
     }
@@ -173,8 +177,15 @@ export default function CartPage() {
                     </div>
                     <div className="product-sku">{line.sku}</div>
                     <div className="small muted">
-                      {formatPrice(line.unitPriceCents, currency)} l&apos;unité
+                      {line.kind === "digital"
+                        ? formatPrice(line.unitPriceCents, currency)
+                        : `${formatPrice(line.unitPriceCents, currency)} l'unité`}
                     </div>
+                    {line.kind === "digital" ? (
+                      <span className="badge badge-info">
+                        Fichier — téléchargement immédiat
+                      </span>
+                    ) : null}
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
@@ -186,24 +197,30 @@ export default function CartPage() {
                   </div>
 
                   <div className="cart-line-right">
-                    <div className="qty">
-                      <button
-                        type="button"
-                        aria-label={`Diminuer la quantité de ${line.name}`}
-                        onClick={() => setQuantity(line.productId, line.quantity - 1)}
-                      >
-                        −
-                      </button>
-                      <span className="value">{line.quantity}</span>
-                      <button
-                        type="button"
-                        aria-label={`Augmenter la quantité de ${line.name}`}
-                        disabled={line.quantity >= line.available}
-                        onClick={() => setQuantity(line.productId, line.quantity + 1)}
-                      >
-                        +
-                      </button>
-                    </div>
+                    {/* Un fichier s'achète une fois : le sélecteur de quantité
+                        n'aurait rien à régler. */}
+                    {line.kind === "digital" ? (
+                      <span className="small muted">1 exemplaire</span>
+                    ) : (
+                      <div className="qty">
+                        <button
+                          type="button"
+                          aria-label={`Diminuer la quantité de ${line.name}`}
+                          onClick={() => setQuantity(line.productId, line.quantity - 1)}
+                        >
+                          −
+                        </button>
+                        <span className="value">{line.quantity}</span>
+                        <button
+                          type="button"
+                          aria-label={`Augmenter la quantité de ${line.name}`}
+                          disabled={line.quantity >= line.available}
+                          onClick={() => setQuantity(line.productId, line.quantity + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                     <strong>{formatPrice(line.lineTotalCents, currency)}</strong>
                   </div>
                 </div>
@@ -235,12 +252,22 @@ export default function CartPage() {
                 <p className="field-error">{quote.promoError}</p>
               ) : null}
               {quote?.promoCode ? (
-                <p className="small" style={{ color: "var(--success)" }}>
-                  Code « {quote.promoCode} » appliqué.{" "}
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={clearPromo}>
-                    Retirer
-                  </button>
-                </p>
+                <>
+                  <p className="small" style={{ color: "var(--success)" }}>
+                    Code « {quote.promoCode} » appliqué.{" "}
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={clearPromo}>
+                      Retirer
+                    </button>
+                  </p>
+                  {/* Le panier ne connaît pas encore l'e-mail : on prévient ici plutôt
+                      que de laisser le refus tomber au moment de payer. */}
+                  {quote.promoOncePerCustomer ? (
+                    <p className="small muted">
+                      Ce code est valable une fois par client. Il sera vérifié avec
+                      votre adresse e-mail au moment de la commande.
+                    </p>
+                  ) : null}
+                </>
               ) : null}
             </form>
 
@@ -255,8 +282,12 @@ export default function CartPage() {
               </div>
             ) : null}
             <div className="summary-row">
-              <span>Livraison</span>
-              <span className="muted small">Calculée après votre adresse</span>
+              <span>{quote?.digitalOnly ? "Remise" : "Livraison"}</span>
+              <span className="muted small">
+                {quote?.digitalOnly
+                  ? "Téléchargement immédiat"
+                  : "Calculée après votre adresse"}
+              </span>
             </div>
             <div className="summary-row summary-total">
               <span>Total</span>
@@ -290,6 +321,38 @@ export default function CartPage() {
             </p>
           </aside>
         </div>
+
+        {suggestions.length > 0 ? (
+          <section>
+            <h2>Complétez votre panier</h2>
+            <p className="muted" style={{ marginTop: -8 }}>
+              Ce que d&apos;autres clients ont commandé avec ces articles.
+            </p>
+            <div className="cart-suggestions">
+              {suggestions.map((product) => (
+                <article key={product.id} className="cart-suggestion">
+                  <Link href={`/produit/${product.slug}`} className="cart-suggestion-media">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={product.imageUrl} alt={product.name} loading="lazy" />
+                  </Link>
+                  <div className="cart-suggestion-body">
+                    <Link href={`/produit/${product.slug}`}>{product.name}</Link>
+                    <div className="product-price">
+                      {formatPrice(product.priceCents, currency)}
+                    </div>
+                    <AddToCartButton
+                      productId={product.id}
+                      name={product.name}
+                      available={product.available}
+                      className="btn btn-secondary btn-sm"
+                      label="Ajouter"
+                    />
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     </main>
   );

@@ -8,11 +8,13 @@ export function ProductPurchase({
   productId,
   name,
   available,
+  kind = "physical",
   maxPerOrder = 20,
 }: {
   productId: string;
   name: string;
   available: number;
+  kind?: "physical" | "digital";
   maxPerOrder?: number;
 }) {
   const { add, items } = useCart();
@@ -21,18 +23,43 @@ export function ProductPurchase({
   // Ce qui est déjà dans le panier compte dans la limite : sinon on pourrait la
   // dépasser en ajoutant plusieurs fois depuis la fiche produit.
   const max = Math.max(0, Math.min(available, maxPerOrder) - inCart);
+  const digital = kind === "digital";
 
   if (max === 0) {
     return (
       <div className="stack">
         <div className="alert alert-error" role="status">
           {inCart > 0
-            ? "Vous avez déjà tout le stock disponible de ce produit dans votre panier."
-            : "Ce produit est actuellement en rupture de stock et ne peut pas être commandé."}
+            ? digital
+              ? "Ce fichier est déjà dans votre panier : un seul exemplaire suffit."
+              : "Vous avez déjà tout le stock disponible de ce produit dans votre panier."
+            : digital
+              ? "Ce fichier n'est pas encore disponible au téléchargement."
+              : "Ce produit est actuellement en rupture de stock et ne peut pas être commandé."}
         </div>
         <Link href={inCart > 0 ? "/panier" : "/boutique"} className="btn btn-secondary">
           {inCart > 0 ? "Voir le panier" : "Voir les autres produits"}
         </Link>
+      </div>
+    );
+  }
+
+  // Un fichier s'achète une fois : pas de sélecteur de quantité à proposer.
+  if (digital) {
+    return (
+      <div className="stack">
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn btn-primary btn-lg"
+            onClick={() => add(productId, 1, name, available)}
+          >
+            Ajouter au panier
+          </button>
+          <Link href="/panier" className="btn btn-secondary btn-lg">
+            Voir le panier
+          </Link>
+        </div>
       </div>
     );
   }

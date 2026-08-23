@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ProductCard } from "@/components/ProductCard";
-import { deliveryAreas, listPublicProducts } from "@/lib/shop";
+import { NEW_PRODUCT_DAYS, deliveryAreas, listPublicProducts } from "@/lib/shop";
 import { readState } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,10 @@ export default async function HomePage() {
   const state = await readState();
   const products = listPublicProducts(state);
   const highlights = products.slice(0, 8);
+  const newest = products
+    .filter((product) => product.isNew)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 4);
   const areas = deliveryAreas(state);
   const cities = areas.flatMap((area) => area.cities);
 
@@ -58,6 +62,36 @@ export default async function HomePage() {
 
       <main className="page">
         <div className="container stack-lg">
+          {/* La section n'apparaît que s'il y a réellement des arrivées récentes :
+              une rubrique « Nouveautés » figée sur les mêmes articles pendant des
+              mois vaut moins que pas de rubrique du tout. */}
+          {newest.length > 0 ? (
+            <section>
+              <div className="page-head">
+                <div>
+                  <h2>Nouveautés</h2>
+                  <p>
+                    Ajouté{newest.length > 1 ? "s" : ""} au catalogue ces{" "}
+                    {NEW_PRODUCT_DAYS} derniers jours.
+                  </p>
+                </div>
+                <Link href="/boutique?tri=nouveautes" className="btn btn-secondary btn-sm">
+                  Voir les nouveautés
+                </Link>
+              </div>
+              <div className="product-grid">
+                {newest.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    currency={state.settings.currency}
+                    lowStockThreshold={state.settings.lowStockThreshold}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           <section>
             <div className="page-head">
               <div>

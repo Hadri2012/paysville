@@ -38,7 +38,19 @@ export function upsertProduct(
     fieldErrors.price = "Prix invalide (ex. 2,99).";
   }
 
-  const stock = body.stock !== undefined ? toInt(body.stock) : (existing?.stock ?? null);
+  const kindRaw = body.kind !== undefined ? cleanString(body.kind, 12) : (existing?.kind ?? "physical");
+  if (kindRaw !== "physical" && kindRaw !== "digital") {
+    fieldErrors.kind = "Type de produit invalide.";
+  }
+  const kind = (kindRaw === "digital" ? "digital" : "physical") as Product["kind"];
+
+  // Un produit numérique n'a pas de stock : la valeur est ignorée et neutralisée.
+  const stock =
+    kind === "digital"
+      ? 0
+      : body.stock !== undefined
+        ? toInt(body.stock)
+        : (existing?.stock ?? null);
   if (stock === null || stock < 0) fieldErrors.stock = "Stock invalide.";
 
   const imageUrl =
@@ -88,6 +100,9 @@ export function upsertProduct(
     existing.category = category;
     existing.sortOrder = sortOrder!;
     existing.active = active;
+    // Les fichiers joints et le modèle 3D ont leurs propres routes d'upload :
+    // seul le type change ici, sans jamais toucher aux assets existants.
+    existing.kind = kind;
     existing.updatedAt = now;
     return existing;
   }
@@ -107,6 +122,9 @@ export function upsertProduct(
       sortOrder ||
       (state.products.reduce((max, p) => Math.max(max, p.sortOrder), 0) + 10),
     archived: false,
+    kind,
+    digitalFiles: [],
+    model3d: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -189,6 +207,10 @@ export function upsertPromotion(
 
   const now = new Date().toISOString();
   const active = body.active !== undefined ? toBoolean(body.active) : (existing?.active ?? true);
+  const oncePerCustomer =
+    body.oncePerCustomer !== undefined
+      ? toBoolean(body.oncePerCustomer)
+      : (existing?.oncePerCustomer ?? false);
 
   if (existing) {
     existing.code = code;
@@ -198,6 +220,7 @@ export function upsertPromotion(
     existing.endsAt = endsAt;
     existing.minSubtotalCents = minSubtotalCents;
     existing.maxUses = maxUses;
+    existing.oncePerCustomer = oncePerCustomer;
     existing.active = active;
     existing.updatedAt = now;
     return existing;
@@ -214,6 +237,7 @@ export function upsertPromotion(
     minSubtotalCents,
     maxUses,
     uses: 0,
+    oncePerCustomer,
     archived: false,
     createdAt: now,
     updatedAt: now,

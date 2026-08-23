@@ -1,14 +1,42 @@
 /**
  * Test de la logique métier critique de Hadrishop (stock, réservations, promotions,
- * zones de livraison, calcul serveur des totaux).
+ * zones de livraison, calcul serveur des totaux, avis clients).
  *
  *   npm run selftest
  */
+import { deleteAsset, readAsset, saveAsset } from "../lib/assets";
+import {
+  fileExtension,
+  fileFormats,
+  formatBytes,
+  orderDownloads,
+} from "../lib/digital";
 import { newId } from "../lib/ids";
-import { confirmOrderPayment, createPendingOrder } from "../lib/orders";
-import { buildQuote, availableStock, sweepReservations } from "../lib/shop";
+import { confirmOrderPayment, createPendingOrder, publicOrderView } from "../lib/orders";
+import { cartSuggestions } from "../lib/recommendations";
+import {
+  approvedReviews,
+  clearReviewReports,
+  createReview,
+  frequentThemes,
+  isVerifiedPurchase,
+  reportReview,
+  sanitizeReviewPhotos,
+  setReviewReply,
+  voteReviewHelpful,
+} from "../lib/reviews";
+import {
+  availableStock,
+  buildQuote,
+  listPublicProducts,
+  salesCounts,
+  sortProducts,
+  sweepReservations,
+} from "../lib/shop";
 import { readState, transaction } from "../lib/store";
-import type { CheckoutIdentity } from "../lib/validation";
+import { MAX_REVIEW_PHOTOS, type Product } from "../lib/types";
+import { decodeUpload, isGlbFile, newAssetId, sanitizeFileName } from "../lib/uploads";
+import { parseCheckoutIdentity, type CheckoutIdentity } from "../lib/validation";
 
 let failures = 0;
 
@@ -134,6 +162,7 @@ async function main() {
       minSubtotalCents: null,
       maxUses: 1,
       uses: 0,
+      oncePerCustomer: false,
       archived: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -149,6 +178,7 @@ async function main() {
       minSubtotalCents: null,
       maxUses: null,
       uses: 0,
+      oncePerCustomer: false,
       archived: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -267,6 +297,492 @@ async function main() {
   console.log("\n== Compteur de promotion ==");
   const promo = state5.promotions.find((p) => p.id === promoId)!;
   check("compteur d'utilisation à 0 (promo non utilisée)", promo.uses === 0);
+
+  console.log("\n== Avis clients ==");
+  // `orderA` (p4) a été payée avec identity.customer.email ; `orderB` (p5) a été
+  // annulée faute de paiement. Le badge doit distinguer les deux.
+  const buyerEmail = identity.customer.email;
+  check(
+    "achat vérifié : commande payée contenant le produit",
+    isVerifiedPurchase(state5, p4.id, buyerEmail),
+  );
+  check(
+    "casse et espaces ignorés dans l'e-mail",
+    isVerifiedPurchase(state5, p4.id, `  ${buyerEmail.toUpperCase()} `),
+  );
+  check(
+    "non vérifié : e-mail inconnu",
+    !isVerifiedPurchase(state5, p4.id, "inconnu@example.org"),
+  );
+  check(
+    "non vérifié : bon e-mail, produit jamais commandé",
+    !isVerifiedPurchase(state5, p2.id, buyerEmail),
+  );
+  // orderB contenait bien p5, mais elle a été annulée faute de paiement.
+  check(
+    "non vérifié : la commande contenant le produit a été annulée",
+    !isVerifiedPurchase(state5, p5.id, buyerEmail),
+  );
+  check("non vérifié : aucun e-mail donné", !isVerifiedPurchase(state5, p4.id, ""));
+
+  const verified = await transaction((state) =>
+    createReview(state, {
+      productId: p4.id,
+      author: "Acheteuse",
+      rating: 5,
+      comment: "Très content de cet achat, la finition est nette.",
+      email: buyerEmail,
+    }),
+  );
+  check("avis d'un acheteur : publié et vérifié", !verified.flagged && verified.verified);
+  check(
+    "avis neuf : aucune réponse, aucun vote",
+    verified.reply === null && verified.helpfulYes === 0 && verified.helpfulNo === 0,
+  );
+
+  const anonymous = await transaction((state) =>
+    createReview(state, {
+      productId: p4.id,
+      author: "Passant",
+      rating: 4,
+      comment: "Objet correct pour le prix, rien à redire.",
+    }),
+  );
+  check("avis sans e-mail : publié, non vérifié", !anonymous.flagged && !anonymous.verified);
+
+  // Réponse de la boutique : écrite, puis retirée par un texte vide.
+  await transaction((state) => {
+    const review = state.reviews.find((r) => r.id === verified.id)!;
+    setReviewReply(review, "  Merci beaucoup pour votre retour !  ");
+  });
+  const withReply = (await readState()).reviews.find((r) => r.id === verified.id)!;
+  check(
+    "réponse enregistrée et détourée",
+    withReply.reply?.text === "Merci beaucoup pour votre retour !",
+  );
+  await transaction((state) => {
+    setReviewReply(state.reviews.find((r) => r.id === verified.id)!, "   ");
+  });
+  check(
+    "réponse retirée par un texte vide",
+    (await readState()).reviews.find((r) => r.id === verified.id)!.reply === null,
+  );
+
+  // Votes d'utilité.
+  await transaction((state) => {
+    const review = state.reviews.find((r) => r.id === verified.id)!;
+    voteReviewHelpful(review, true);
+    voteReviewHelpful(review, true);
+    voteReviewHelpful(review, false);
+  });
+  const voted = (await readState()).reviews.find((r) => r.id === verified.id)!;
+  check("votes comptés séparément", voted.helpfulYes === 2 && voted.helpfulNo === 1);
+
+  // Les avis marqués comme spam ne comptent ni dans la liste ni dans la moyenne.
+  const spam = await transaction((state) =>
+    createReview(state, {
+      productId: p4.id,
+      author: "Bot",
+      rating: 1,
+      comment: "Visitez https://exemple-spam.test pour gagner de l'argent facilement.",
+    }),
+  );
+  check("lien détecté comme spam", spam.flagged);
+  const publicList = approvedReviews(await readState(), p4.id);
+  check(
+    "avis spam absent de la liste publique",
+    publicList.length === 2 && !publicList.some((r) => r.id === spam.id),
+  );
+
+  console.log("\n== Photos et signalements d'avis ==");
+  // Le serveur ne fait confiance à rien de ce que le navigateur envoie.
+  const jpeg = `data:image/jpeg;base64,${"A".repeat(400)}`;
+  check(
+    "photo JPEG acceptée",
+    sanitizeReviewPhotos([jpeg]).length === 1,
+  );
+  check(
+    "SVG refusé (peut porter du script)",
+    sanitizeReviewPhotos(["data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="]).length === 0,
+  );
+  check(
+    "URL distante refusée",
+    sanitizeReviewPhotos(["https://exemple.test/photo.jpg"]).length === 0,
+  );
+  check(
+    "photo trop lourde refusée",
+    sanitizeReviewPhotos([`data:image/jpeg;base64,${"A".repeat(400_000)}`]).length === 0,
+  );
+  check(
+    `pas plus de ${MAX_REVIEW_PHOTOS} photos`,
+    sanitizeReviewPhotos([jpeg, jpeg, jpeg, jpeg]).length === MAX_REVIEW_PHOTOS,
+  );
+  check("valeur non tableau ignorée", sanitizeReviewPhotos("pas un tableau").length === 0);
+
+  await transaction((state) => {
+    const review = state.reviews.find((r) => r.id === verified.id)!;
+    reportReview(review);
+    reportReview(review);
+  });
+  const flaggedByVisitors = (await readState()).reviews.find((r) => r.id === verified.id)!;
+  check("signalements comptés", flaggedByVisitors.reports === 2);
+  check(
+    "un signalement ne masque pas l'avis",
+    !flaggedByVisitors.flagged &&
+      approvedReviews(await readState(), p4.id).some((r) => r.id === verified.id),
+  );
+  await transaction((state) =>
+    clearReviewReports(state.reviews.find((r) => r.id === verified.id)!),
+  );
+  check(
+    "signalements remis à zéro",
+    (await readState()).reviews.find((r) => r.id === verified.id)!.reports === 0,
+  );
+
+  console.log("\n== Points le plus souvent cités ==");
+  const themeProduct = (await readState()).products.find((p) => p.sku === "P6")!;
+  await transaction((state) => {
+    const comments = [
+      "Finition impeccable et objet très solide, je recommande.",
+      "La finition est nette, livraison rapide en prime.",
+      "Solide, bien fini. Livraison rapide elle aussi.",
+      "Un peu petit à mon goût mais la finition reste correcte.",
+    ];
+    for (const [index, comment] of comments.entries()) {
+      createReview(state, {
+        productId: themeProduct.id,
+        author: `Client ${index + 1}`,
+        rating: 4,
+        comment,
+      });
+    }
+  });
+  const themeReviews = approvedReviews(await readState(), themeProduct.id);
+  const themes = frequentThemes(themeReviews, themeProduct.name);
+  const labels = themes.map((t) => t.label);
+  check("« finition » ressort des 4 avis", labels.includes("finition"), labels.join(", "));
+  check("singulier et pluriel regroupés", labels.includes("solide"), labels.join(", "));
+  check(
+    "un mot cité une seule fois est écarté",
+    !labels.includes("petit"),
+    labels.join(", "),
+  );
+  check(
+    "compte des avis distincts, pas des occurrences",
+    themes.find((t) => t.label === "finition")?.reviews === 3,
+    JSON.stringify(themes),
+  );
+  check("aucun mot vide dans le résumé", !labels.some((l) => ["très", "tres", "mais"].includes(l)));
+  check(
+    "résumé muet en dessous de 3 avis",
+    frequentThemes(themeReviews.slice(0, 2), "").length === 0,
+  );
+
+  console.log("\n== Ventes, nouveautés et suggestions de panier ==");
+  const state6 = await readState();
+  const sales = salesCounts(state6);
+  // orderA : 2 exemplaires de P4, payée. orderB : P5, annulée faute de paiement.
+  check("quantités payées comptées", sales.get(p4.id) === 2, `${sales.get(p4.id)}`);
+  check("commande annulée non comptée", (sales.get(p5.id) ?? 0) === 0);
+  const bestSellers = sortProducts(listPublicProducts(state6), "ventes", { sales });
+  check(
+    "le produit vendu passe devant les invendus en stock",
+    bestSellers.filter((p) => p.inStock)[0]?.id === p4.id ||
+      // P4 est en rupture après la vente : il passe alors en fin de liste, ce qui
+      // reste la règle générale du tri.
+      !bestSellers.find((p) => p.id === p4.id)?.inStock,
+  );
+
+  const fresh = await transaction((state) => {
+    const product = state.products.find((p) => p.sku === "P6")!;
+    product.createdAt = new Date().toISOString();
+    const old = state.products.find((p) => p.sku === "P7")!;
+    old.createdAt = new Date(Date.now() - 120 * 86_400_000).toISOString();
+    return { newId: product.id, oldId: old.id };
+  });
+  const state7 = await readState();
+  const catalogue = listPublicProducts(state7);
+  check(
+    "produit récent marqué comme nouveauté",
+    catalogue.find((p) => p.id === fresh.newId)?.isNew === true,
+  );
+  check(
+    "produit ancien non marqué",
+    catalogue.find((p) => p.id === fresh.oldId)?.isNew === false,
+  );
+
+  const suggested = cartSuggestions(state7, [p4.id]);
+  check(
+    "suggestions hors panier et en stock",
+    suggested.length > 0 &&
+      suggested.every((p) => p.id !== p4.id && p.inStock),
+    `${suggested.length}`,
+  );
+  check("panier vide : aucune suggestion", cartSuggestions(state7, []).length === 0);
+
+  console.log("\n== Code promo une fois par client ==");
+  const oncePromoId = await transaction((state) => {
+    const promotion = state.promotions.find((p) => p.id === promoId)!;
+    promotion.oncePerCustomer = true;
+    promotion.maxUses = null;
+    return promotion.id;
+  });
+  const state8 = await readState();
+  // orderA a été payée par identity.customer.email, mais sans ce code.
+  check(
+    "code accepté pour un client qui ne l'a jamais utilisé",
+    buildQuote(state8, {
+      items: [{ productId: p2.id, quantity: 2 }],
+      promoCode: "TEST10",
+      customerEmail: buyerEmail,
+    }).discountCents === 60,
+  );
+  await transaction((state) => {
+    const order = state.orders.find((o) => o.id === orderA.id)!;
+    order.promotionId = oncePromoId;
+  });
+  const state9 = await readState();
+  expectThrows(
+    "code refusé au même client la seconde fois",
+    () =>
+      buildQuote(state9, {
+        items: [{ productId: p2.id, quantity: 2 }],
+        promoCode: "TEST10",
+        customerEmail: buyerEmail,
+        strict: true,
+      }),
+    "invalid_promo",
+  );
+  check(
+    "code accepté pour une autre adresse",
+    buildQuote(state9, {
+      items: [{ productId: p2.id, quantity: 2 }],
+      promoCode: "TEST10",
+      customerEmail: "quelquun.dautre@example.org",
+    }).discountCents === 60,
+  );
+  const anonymousQuote = buildQuote(state9, {
+    items: [{ productId: p2.id, quantity: 2 }],
+    promoCode: "TEST10",
+  });
+  check(
+    "panier sans e-mail : code appliqué mais signalé",
+    anonymousQuote.discountCents === 60 && anonymousQuote.promoOncePerCustomer,
+  );
+
+  console.log("\n== Fichiers numériques : utilitaires ==");
+  check("extension lisible", fileExtension("modele-v2.STL") === "STL");
+  check("extension absente", fileExtension("sans-extension") === "");
+  check(
+    "formats dédoublonnés dans l'ordre",
+    fileFormats([{ name: "a.stl" }, { name: "b.pdf" }, { name: "c.STL" }]).join(",") ===
+      "STL,PDF",
+  );
+  check("taille en Mo", formatBytes(2_100_000) === "2,1 Mo");
+  check("taille en Ko", formatBytes(340_000) === "340 Ko");
+  check(
+    "nom de fichier débarrassé de son chemin",
+    sanitizeFileName("../../etc/passwd") === "passwd",
+  );
+  check("nom vide remplacé", sanitizeFileName("") === "fichier");
+
+  const decoded = decodeUpload(
+    { name: "notice.txt", data: `data:text/plain;base64,${Buffer.from("bonjour").toString("base64")}` },
+    1000,
+  );
+  check(
+    "data-URI décodée avec son type",
+    decoded.name === "notice.txt" &&
+      decoded.contentType === "text/plain" &&
+      decoded.bytes.toString() === "bonjour",
+  );
+  check(
+    "base64 nu accepté, type générique",
+    decodeUpload({ name: "x.bin", data: Buffer.from("ab").toString("base64") }, 100)
+      .contentType === "application/octet-stream",
+  );
+  expectThrows(
+    "fichier trop volumineux refusé",
+    () => decodeUpload({ name: "gros.stl", data: Buffer.alloc(500).toString("base64") }, 100),
+    "validation_error",
+  );
+  expectThrows(
+    "contenu vide refusé",
+    () => decodeUpload({ name: "vide.stl", data: "" }, 100),
+    "validation_error",
+  );
+  check(
+    "en-tête GLB reconnue",
+    isGlbFile(Buffer.concat([Buffer.from("glTF"), Buffer.alloc(20)])),
+  );
+  check("fichier non GLB rejeté", !isGlbFile(Buffer.from("solid ascii stl content")));
+
+  console.log("\n== Magasin d'assets ==");
+  const assetId = newAssetId();
+  await saveAsset(assetId, Buffer.from("contenu du fichier vendu"));
+  const roundTrip = await readAsset(assetId);
+  check("asset relu à l'identique", roundTrip?.toString() === "contenu du fichier vendu");
+  check("identifiant inconnu : rien", (await readAsset(newAssetId())) === null);
+  check("identifiant invalide : rien", (await readAsset("../../etc/passwd")) === null);
+  await deleteAsset(assetId);
+  check("asset supprimé", (await readAsset(assetId)) === null);
+
+  console.log("\n== Produit numérique : vente et remise ==");
+  const digitalAssetId = newAssetId();
+  await saveAsset(digitalAssetId, Buffer.from("STL du porte-casque"));
+  const digitalId = await transaction((state) => {
+    const now = new Date().toISOString();
+    const product: Product = {
+      id: newId(),
+      sku: "DIGI1",
+      slug: "modele-porte-casque",
+      name: "Modèle 3D — Porte casque",
+      description: "Le fichier source à imprimer chez soi.",
+      priceCents: 500,
+      stock: 0,
+      imageUrl: "",
+      active: true,
+      category: "Fichiers",
+      sortOrder: 999,
+      archived: false,
+      kind: "digital",
+      digitalFiles: [
+        {
+          id: digitalAssetId,
+          name: "porte-casque.stl",
+          sizeBytes: 19,
+          contentType: "application/octet-stream",
+          createdAt: now,
+        },
+      ],
+      model3d: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.products.push(product);
+    return product.id;
+  });
+
+  const state10 = await readState();
+  const digitalPublic = listPublicProducts(state10).find((p) => p.id === digitalId)!;
+  check(
+    "fichier vendable malgré un stock à zéro",
+    digitalPublic.inStock && digitalPublic.available === 1,
+  );
+  check(
+    "formats et compteur exposés au catalogue",
+    digitalPublic.kind === "digital" &&
+      digitalPublic.fileCount === 1 &&
+      digitalPublic.fileFormats.join(",") === "STL",
+  );
+
+  const digitalQuote = buildQuote(state10, {
+    items: [{ productId: digitalId, quantity: 5 }],
+    postalCode: "9999",
+    city: "Hors zone",
+  });
+  check(
+    "quantité ramenée à un exemplaire",
+    digitalQuote.lines[0]?.quantity === 1 &&
+      digitalQuote.issues.some((issue) => issue.code === "digital_single"),
+  );
+  check(
+    "panier tout numérique : ni frais ni zone à couvrir",
+    digitalQuote.digitalOnly &&
+      digitalQuote.hasDigital &&
+      digitalQuote.shippingCents === 0 &&
+      digitalQuote.shippingCovered === true,
+    `covered=${digitalQuote.shippingCovered}`,
+  );
+  const mixedQuote = buildQuote(state10, {
+    items: [
+      { productId: digitalId, quantity: 1 },
+      { productId: p2.id, quantity: 1 },
+    ],
+    postalCode: "1435",
+    city: "Corbais",
+  });
+  check(
+    "panier mixte : livraison toujours résolue",
+    mixedQuote.hasDigital && !mixedQuote.digitalOnly && mixedQuote.shippingCovered === true,
+  );
+
+  check(
+    "adresse facultative pour une commande de fichiers",
+    parseCheckoutIdentity(
+      {
+        firstName: "Test",
+        lastName: "Client",
+        email: "fichier@example.org",
+        phone: "+32470000000",
+        terms: true,
+      },
+      { requireAddress: false },
+    ).customer.email === "fichier@example.org",
+  );
+  expectThrows(
+    "adresse exigée pour un objet à livrer",
+    () =>
+      parseCheckoutIdentity({
+        firstName: "Test",
+        lastName: "Client",
+        email: "objet@example.org",
+        phone: "+32470000000",
+        terms: true,
+      }),
+    "invalid_customer_data",
+  );
+
+  const digitalOrder = await transaction((state) => {
+    const quote = buildQuote(state, { items: [{ productId: digitalId, quantity: 1 }] });
+    return createPendingOrder(state, { quote, identity });
+  });
+  check(
+    "aucun stock réservé pour un fichier",
+    (await readState()).reservations.find((r) => r.orderId === digitalOrder.id)?.items
+      .length === 0,
+  );
+  check(
+    "avant paiement : aucun téléchargement",
+    orderDownloads(await readState(), digitalOrder).length === 0,
+  );
+
+  await transaction((state) => {
+    confirmOrderPayment(state, digitalOrder.id, {});
+  });
+  const state11 = await readState();
+  const paidDigital = state11.orders.find((o) => o.id === digitalOrder.id)!;
+  const downloads = orderDownloads(state11, paidDigital);
+  check(
+    "après paiement : le fichier est remis",
+    downloads.length === 1 && downloads[0].files[0]?.name === "porte-casque.stl",
+  );
+  check(
+    "le lien porte le jeton de la commande",
+    publicOrderView(paidDigital, state11).downloads[0]?.files[0]?.url.includes(
+      paidDigital.accessToken,
+    ) === true,
+  );
+  check(
+    "vue publique sans état : aucun lien",
+    publicOrderView(paidDigital).downloads.length === 0,
+  );
+  check(
+    "le stock du produit numérique n'a pas bougé",
+    state11.products.find((p) => p.id === digitalId)?.stock === 0,
+  );
+
+  const refunded = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === digitalOrder.id)!;
+    order.status = "refunded";
+    order.paymentStatus = "refunded";
+    return order;
+  });
+  check(
+    "commande remboursée : accès révoqué",
+    orderDownloads(await readState(), refunded).length === 0,
+  );
+  await deleteAsset(digitalAssetId);
 
   console.log(
     failures === 0

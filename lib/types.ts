@@ -19,6 +19,41 @@ export type PromotionType = "fixed" | "percent";
 
 export type ReservationStatus = "active" | "consumed" | "released";
 
+/**
+ * Nature d'un produit : objet expédié, ou fichier(s) remis par téléchargement.
+ * Un produit numérique n'a ni stock ni frais de livraison — l'achat donne accès
+ * aux fichiers attachés, quel que soit leur format.
+ */
+export type ProductKind = "physical" | "digital";
+
+/**
+ * Fichier vendu avec un produit numérique. Seules les métadonnées vivent ici :
+ * le contenu binaire est rangé dans le magasin d'assets (`lib/assets.ts`), pour
+ * ne pas alourdir le document JSON relu à chaque requête.
+ */
+export interface DigitalFile {
+  /** Identifiant de l'asset binaire correspondant. */
+  id: string;
+  /** Nom de fichier d'origine, renvoyé tel quel au téléchargement. */
+  name: string;
+  sizeBytes: number;
+  contentType: string;
+  createdAt: string;
+}
+
+/** Modèle 3D (GLB) affiché en visionneuse interactive sur la fiche produit. */
+export interface Product3DModel {
+  /** Identifiant de l'asset binaire correspondant. */
+  id: string;
+  name: string;
+  sizeBytes: number;
+}
+
+/** Bornes des fichiers joints à un produit (vendus ou modèle 3D). */
+export const MAX_DIGITAL_FILES = 10;
+export const MAX_DIGITAL_FILE_BYTES = 10_000_000;
+export const MAX_MODEL3D_BYTES = 6_000_000;
+
 export interface Product {
   id: string;
   sku: string;
@@ -32,6 +67,12 @@ export interface Product {
   category: string;
   sortOrder: number;
   archived: boolean;
+  /** `physical` (défaut) ou `digital` : fichier(s) livrés par téléchargement. */
+  kind: ProductKind;
+  /** Fichiers remis à l'achat quand `kind === "digital"`. */
+  digitalFiles: DigitalFile[];
+  /** Modèle 3D optionnel (aperçu interactif), quel que soit le type de produit. */
+  model3d: Product3DModel | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +85,8 @@ export interface OrderItem {
   quantity: number;
   lineTotalCents: number;
   imageUrl: string;
+  /** Nature de l'article au moment de l'achat : conditionne stock et livraison. */
+  kind: ProductKind;
 }
 
 export interface OrderCustomer {
@@ -112,15 +155,38 @@ export interface Promotion {
   minSubtotalCents: number | null;
   maxUses: number | null;
   uses: number;
+  /**
+   * Un code par client : une adresse e-mail qui a déjà payé une commande avec ce
+   * code ne peut plus l'utiliser. Distinct de `maxUses`, qui borne le total toutes
+   * personnes confondues.
+   */
+  oncePerCustomer: boolean;
   archived: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
+/** Réponse publique de la boutique sous un avis. */
+export interface ReviewReply {
+  text: string;
+  at: string;
+}
+
+/** Longueur maximale d'une réponse de la boutique (partagée avec le formulaire admin). */
+export const MAX_REPLY_LENGTH = 800;
+
 /**
- * Avis client sur un produit. Publié seulement après validation depuis
- * l'administration (`approved`) : sans modération, un formulaire public ouvert
- * est une porte d'entrée directe pour le spam.
+ * Photos jointes à un avis. Elles sont stockées en data-URI dans le document JSON
+ * de la boutique, donc bornées serré : le navigateur redimensionne avant l'envoi et
+ * le serveur refuse ce qui dépasse. Sans cela, quelques dizaines d'avis illustrés
+ * suffiraient à alourdir chaque lecture de la base.
+ */
+export const MAX_REVIEW_PHOTOS = 2;
+export const MAX_REVIEW_PHOTO_BYTES = 320_000;
+
+/**
+ * Avis client sur un produit. Publié immédiatement, mais signalé automatiquement
+ * si le filtre anti-spam détecte du contenu suspect.
  */
 export interface Review {
   id: string;
@@ -129,10 +195,26 @@ export interface Review {
   /** Entier de 1 à 5. */
   rating: number;
   comment: string;
-  approved: boolean;
+  flagged: boolean;
+  /**
+   * Achat confirmé : au dépôt de l'avis, une commande payée contenant ce produit
+   * portait l'adresse e-mail donnée par l'auteur. L'e-mail lui-même n'est pas
+   * conservé — seul le résultat de la vérification l'est.
+   */
+  verified: boolean;
+  /** Réponse de la boutique, affichée sous l'avis. `null` tant qu'il n'y en a pas. */
+  reply: ReviewReply | null;
+  /** Votes « cet avis m'a été utile » / « pas utile ». */
+  helpfulYes: number;
+  helpfulNo: number;
+  /** Photos jointes par l'auteur, en data-URI. */
+  photos: string[];
+  /**
+   * Signalements déposés par des visiteurs. Ne masque rien tout seul : c'est une
+   * file de lecture pour la boutique, qui décide seule de marquer ou de supprimer.
+   */
+  reports: number;
   createdAt: string;
-  /** Renseigné quand un administrateur approuve ou rejette l'avis. */
-  moderatedAt: string | null;
 }
 
 export interface ShippingZone {

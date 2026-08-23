@@ -6,6 +6,7 @@ import { ClearCartOnMount } from "@/components/ClearCartOnMount";
 import { OrderDetails } from "@/components/OrderDetails";
 import { publicOrderView } from "@/lib/orders";
 import { syncOrderFromStripe } from "@/lib/payments";
+import { readState } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +78,7 @@ export default async function ConfirmationPage({
           </div>
         )}
 
-        <OrderDetails order={publicOrderView(order)} />
+        <OrderDetails order={publicOrderView(order, await readState())} />
 
         <div className="panel small">
           <p>

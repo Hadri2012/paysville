@@ -2,13 +2,21 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { Model3DViewer } from "@/components/Model3DViewer";
 import { ProductPurchase } from "@/components/ProductPurchase";
 import { ReviewForm } from "@/components/ReviewForm";
 import { ReviewList } from "@/components/ReviewList";
+import { ReviewThemes } from "@/components/ReviewThemes";
 import { RatingSummary } from "@/components/Stars";
 import { suggestionsFor } from "@/lib/aiRecommendations";
+import { fileExtension, formatBytes } from "@/lib/digital";
 import { formatPrice } from "@/lib/money";
-import { approvedReviews, publicReviewView, summarize } from "@/lib/reviews";
+import {
+  approvedReviews,
+  frequentThemes,
+  publicReviewView,
+  summarize,
+} from "@/lib/reviews";
 import { findProductByHandle, toPublicProduct } from "@/lib/shop";
 import { readState } from "@/lib/store";
 
@@ -38,6 +46,9 @@ export default async function ProductPage({ params }: Props) {
   const product = toPublicProduct(state, found);
   const reviews = approvedReviews(state, product.id);
   const rating = summarize(reviews);
+  // Le nom du produit est écarté : il revient dans presque tous les avis et ne
+  // distinguerait rien.
+  const themes = frequentThemes(reviews, `${product.name} ${product.category}`);
   const suggestions = await suggestionsFor(state, product);
 
   return (
@@ -49,9 +60,15 @@ export default async function ProductPage({ params }: Props) {
         </nav>
 
         <div className="product-detail">
-          <div className="product-detail-media">
+          <div className="product-detail-media stack">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={product.imageUrl} alt={product.name} width={900} height={900} />
+            {found.model3d ? (
+              <Model3DViewer
+                src={`/api/modeles/${found.model3d.id}`}
+                productName={product.name}
+              />
+            ) : null}
           </div>
 
           <div className="stack">
@@ -72,7 +89,17 @@ export default async function ProductPage({ params }: Props) {
             </div>
 
             <div>
-              {product.inStock ? (
+              {product.kind === "digital" ? (
+                product.inStock ? (
+                  <span className="badge badge-success badge-dot">
+                    Fichier — téléchargement immédiat
+                  </span>
+                ) : (
+                  <span className="badge badge-danger badge-dot">
+                    Bientôt disponible
+                  </span>
+                )
+              ) : product.inStock ? (
                 <span className="badge badge-success badge-dot">
                   En stock — {product.available} disponible
                   {product.available > 1 ? "s" : ""}
@@ -91,16 +118,51 @@ export default async function ProductPage({ params }: Props) {
               <p style={{ color: "var(--ink-2)" }}>{product.description}</p>
             ) : null}
 
+            {product.kind === "digital" && found.digitalFiles.length > 0 ? (
+              <section className="digital-files">
+                <h2 className="card-title" style={{ marginTop: 0 }}>
+                  Ce que vous recevez
+                </h2>
+                <ul>
+                  {found.digitalFiles.map((file) => (
+                    <li key={file.id}>
+                      <span className="file-format">{fileExtension(file.name) || "FIC"}</span>
+                      <span>{file.name}</span>
+                      <span className="small muted">{formatBytes(file.sizeBytes)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="small muted" style={{ marginBottom: 0 }}>
+                  Téléchargement disponible dès le paiement confirmé, sans limite de
+                  nombre, depuis votre page de suivi de commande.
+                </p>
+              </section>
+            ) : null}
+
             <ProductPurchase
               productId={product.id}
               name={product.name}
               available={product.available}
+              kind={product.kind}
             />
 
             <div className="panel small">
-              <strong>Bon à savoir :</strong> le stock et le prix sont revérifiés par
-              notre serveur au moment du paiement. Vous ne payez jamais un montant
-              différent de celui affiché ici.
+              <strong>Bon à savoir :</strong>{" "}
+              {product.kind === "digital" ? (
+                <>
+                  ce produit est un fichier numérique : rien n&apos;est expédié, aucun
+                  frais de livraison ne s&apos;applique. En le commandant, vous acceptez
+                  que le téléchargement démarre immédiatement, ce qui met fin au droit de
+                  rétractation (voir les{" "}
+                  <Link href="/cgv">conditions générales de vente</Link>).
+                </>
+              ) : (
+                <>
+                  le stock et le prix sont revérifiés par notre serveur au moment du
+                  paiement. Vous ne payez jamais un montant différent de celui affiché
+                  ici.
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -151,9 +213,14 @@ export default async function ProductPage({ params }: Props) {
             </div>
           </div>
 
+          <ReviewThemes themes={themes} total={reviews.length} />
+
           <div className="review-layout">
             <div>
-              <ReviewList reviews={reviews.map(publicReviewView)} />
+              <ReviewList
+                reviews={reviews.map(publicReviewView)}
+                shopName={state.settings.shopName}
+              />
             </div>
             <aside className="card">
               <h3 className="card-title">Donner mon avis</h3>

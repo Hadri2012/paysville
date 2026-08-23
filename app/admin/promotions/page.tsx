@@ -23,6 +23,7 @@ export default async function AdminPromotionsPage() {
       minSubtotalCents: promotion.minSubtotalCents,
       maxUses: promotion.maxUses,
       uses: promotion.uses,
+      oncePerCustomer: promotion.oncePerCustomer,
       archived: promotion.archived,
     }));
 

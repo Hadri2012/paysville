@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 7;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -80,6 +80,63 @@ function migrate(state: State): State {
   // cette étape ne sert qu'à porter le numéro de version.
   if (state.schemaVersion < 3) {
     state.reviews ??= [];
+  }
+
+  // v3 -> v4 : auto-publication des avis avec filtrage anti-spam automatique.
+  // Les avis non-approuvés deviennent marqués comme non-flaggés (ils seront visibles).
+  if (state.schemaVersion < 4) {
+    for (const item of state.reviews) {
+      const oldReview = item as unknown as Record<string, unknown>;
+      if ('approved' in oldReview && 'moderatedAt' in oldReview) {
+        const review = item as unknown as Record<string, unknown>;
+        review.flagged = !(review.approved as boolean);
+        delete review.approved;
+        delete review.moderatedAt;
+      }
+    }
+  }
+
+  // v4 -> v5 : réponse de la boutique, badge « achat vérifié » et votes d'utilité.
+  // Les avis déjà en base n'ont aucun de ces champs : on leur donne l'état neutre
+  // (pas de réponse, non vérifié, aucun vote). Un ancien avis ne peut pas être
+  // vérifié rétroactivement — l'e-mail de son auteur n'a jamais été conservé.
+  if (state.schemaVersion < 5) {
+    for (const review of state.reviews) {
+      review.verified ??= false;
+      review.reply ??= null;
+      review.helpfulYes ??= 0;
+      review.helpfulNo ??= 0;
+    }
+  }
+
+  // v5 -> v6 : photos et signalements sur les avis, codes promo à usage unique par
+  // client. Là encore, l'état neutre pour ce qui existe déjà — en particulier
+  // `oncePerCustomer: false`, pour qu'un code en circulation continue de marcher
+  // exactement comme avant la mise à jour.
+  if (state.schemaVersion < 6) {
+    for (const review of state.reviews) {
+      review.photos ??= [];
+      review.reports ??= 0;
+    }
+    for (const promotion of state.promotions) {
+      promotion.oncePerCustomer ??= false;
+    }
+  }
+
+  // v6 -> v7 : produits numériques (fichiers vendus par téléchargement) et modèle
+  // 3D optionnel. Tout ce qui existe est un produit physique sans fichier ni
+  // modèle : l'état neutre, qui ne change rien au comportement en place.
+  if (state.schemaVersion < 7) {
+    for (const product of state.products) {
+      product.kind ??= "physical";
+      product.digitalFiles ??= [];
+      product.model3d ??= null;
+    }
+    for (const order of state.orders) {
+      for (const item of order.items) {
+        item.kind ??= "physical";
+      }
+    }
   }
 
   state.schemaVersion = CURRENT_SCHEMA_VERSION;

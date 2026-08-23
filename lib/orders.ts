@@ -1,3 +1,4 @@
+import { orderDownloads } from "./digital";
 import { newId, newToken } from "./ids";
 import { availableStock, sweepReservations, type Quote } from "./shop";
 import type { Order, OrderStatus, State } from "./types";
@@ -43,6 +44,7 @@ export function createPendingOrder(state: State, input: CreateOrderInput): Order
       quantity: line.quantity,
       lineTotalCents: line.lineTotalCents,
       imageUrl: line.imageUrl,
+      kind: line.kind,
     })),
     subtotalCents: quote.subtotalCents,
     discountCents: quote.discountCents,
@@ -67,13 +69,18 @@ export function createPendingOrder(state: State, input: CreateOrderInput): Order
   };
 
   state.orders.push(order);
+  // Seuls les articles physiques réservent du stock : un fichier téléchargeable
+  // n'est jamais épuisé. La réservation (même vide) garde son second rôle —
+  // annuler la commande si le paiement n'arrive pas à temps.
   state.reservations.push({
     id: newId(),
     orderId: order.id,
-    items: order.items.map((item) => ({
-      productId: item.productId,
-      quantity: item.quantity,
-    })),
+    items: order.items
+      .filter((item) => item.kind !== "digital")
+      .map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
     createdAt: iso,
     expiresAt: new Date(
       now.getTime() + Math.max(5, state.settings.reservationMinutes) * 60_000,
@@ -126,8 +133,10 @@ export function confirmOrderPayment(
     reservation.status = "consumed";
   } else {
     // La réservation a expiré avant la confirmation : on revérifie le stock réel.
+    // Les fichiers téléchargeables ne sont pas concernés — rien à décompter.
+    const physicalItems = order.items.filter((item) => item.kind !== "digital");
     const missing: string[] = [];
-    for (const item of order.items) {
+    for (const item of physicalItems) {
       const product = state.products.find((p) => p.id === item.productId);
       if (!product) {
         missing.push(item.name);
@@ -138,7 +147,7 @@ export function confirmOrderPayment(
         missing.push(`${item.name} (${free}/${item.quantity} disponible)`);
       }
     }
-    for (const item of order.items) {
+    for (const item of physicalItems) {
       const product = state.products.find((p) => p.id === item.productId);
       if (product) product.stock = Math.max(0, product.stock - item.quantity);
     }
@@ -183,6 +192,7 @@ export function releaseOrder(
 /** Remet le stock en rayon quand une commande payée est annulée/remboursée par l'admin. */
 export function restockOrder(state: State, order: Order): void {
   for (const item of order.items) {
+    if (item.kind === "digital") continue;
     const product = state.products.find((p) => p.id === item.productId);
     if (product) product.stock += item.quantity;
   }
@@ -197,8 +207,29 @@ export function findOrderBySession(state: State, sessionId: string): Order | und
   return state.orders.find((o) => o.stripeSessionId === sessionId);
 }
 
-/** Vue « client » d'une commande : aucune donnée interne inutile n'est exposée. */
-export function publicOrderView(order: Order) {
+/**
+ * Vue « client » d'une commande : aucune donnée interne inutile n'est exposée.
+ *
+ * Avec `state`, la vue inclut les liens de téléchargement des fichiers achetés
+ * (commande payée uniquement). Ces liens embarquent le jeton d'accès de la
+ * commande — ils ne sont donc remis qu'à qui a déjà prouvé qu'elle est la
+ * sienne (numéro + e-mail, ou lien de confirmation).
+ */
+export function publicOrderView(order: Order, state?: State) {
+  const downloads = state
+    ? orderDownloads(state, order).map((group) => ({
+        productId: group.productId,
+        productName: group.productName,
+        files: group.files.map((file) => ({
+          name: file.name,
+          sizeBytes: file.sizeBytes,
+          url: `/api/telechargement?commande=${encodeURIComponent(
+            order.number,
+          )}&token=${order.accessToken}&fichier=${file.fileId}`,
+        })),
+      }))
+    : [];
+
   return {
     number: order.number,
     createdAt: order.createdAt,
@@ -211,7 +242,9 @@ export function publicOrderView(order: Order) {
       unitPriceCents: item.unitPriceCents,
       lineTotalCents: item.lineTotalCents,
       imageUrl: item.imageUrl,
+      kind: item.kind,
     })),
+    downloads,
     subtotalCents: order.subtotalCents,
     discountCents: order.discountCents,
     promoCode: order.promoCode,

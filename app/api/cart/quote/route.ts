@@ -1,4 +1,5 @@
 import { handle, jsonOk, limit, readJson } from "@/lib/http";
+import { cartSuggestions } from "@/lib/recommendations";
 import { buildQuote } from "@/lib/shop";
 import { readState } from "@/lib/store";
 import { cleanString, parseCartItems } from "@/lib/validation";
@@ -8,6 +9,10 @@ export const dynamic = "force-dynamic";
 /**
  * Recalcule un panier côté serveur : prix réels, stock disponible, code promo et
  * frais de livraison. Le navigateur n'envoie que des identifiants et des quantités.
+ *
+ * Les suggestions « Complétez votre panier » voyagent dans la même réponse : elles
+ * dépendent exactement du même panier, et le contraire imposerait un second aller-
+ * retour à chaque changement de quantité.
  */
 export async function POST(request: Request) {
   return handle(async () => {
@@ -22,6 +27,10 @@ export async function POST(request: Request) {
       city: cleanString(body.city, 80) || null,
       strict: false,
     });
-    return jsonOk({ quote });
+    const suggestions = cartSuggestions(
+      state,
+      quote.lines.map((line) => line.productId),
+    );
+    return jsonOk({ quote, suggestions });
   });
 }
