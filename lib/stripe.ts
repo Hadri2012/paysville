@@ -55,12 +55,16 @@ export async function createCheckoutSession(
     discounts.push({ coupon: coupon.id });
   }
 
+  const digitalOnly = order.items.every((item) => item.kind === "digital");
   const shippingOptions: Stripe.Checkout.SessionCreateParams.ShippingOption[] = [
     {
       shipping_rate_data: {
         type: "fixed_amount",
-        display_name:
-          order.shippingCents > 0 ? "Livraison Hadrishop" : "Livraison offerte",
+        display_name: digitalOnly
+          ? "Remise par téléchargement"
+          : order.shippingCents > 0
+            ? "Livraison Hadrishop"
+            : "Livraison offerte",
         fixed_amount: { amount: order.shippingCents, currency },
       },
     },

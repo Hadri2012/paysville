@@ -1,3 +1,4 @@
+import { fileExtension, formatBytes } from "@/lib/digital";
 import { formatPrice } from "@/lib/money";
 import type { PublicOrderView } from "@/lib/orders";
 import {
@@ -47,7 +48,65 @@ function formatDate(iso: string): string {
   });
 }
 
+/**
+ * Fichiers achetés, remis dès le paiement confirmé. Les liens portent le jeton
+ * d'accès de la commande : ils fonctionnent tant que la commande y donne droit,
+ * sans compte client, et restent inutilisables pour qui ne les a pas reçus.
+ */
+function Downloads({ order }: { order: PublicOrderView }) {
+  const awaiting =
+    order.downloads.length === 0 && order.items.some((item) => item.kind === "digital");
+
+  if (awaiting) {
+    return (
+      <section className="card">
+        <h3 className="card-title">Mes fichiers</h3>
+        <p className="small muted" style={{ margin: 0 }}>
+          {order.paymentStatus === "paid"
+            ? "Cette commande ne donne plus accès à ses fichiers. Contactez la boutique en précisant votre numéro de commande."
+            : "Vos fichiers apparaîtront ici dès que le paiement sera confirmé."}
+        </p>
+      </section>
+    );
+  }
+
+  if (order.downloads.length === 0) return null;
+
+  return (
+    <section className="card">
+      <h3 className="card-title">Mes fichiers</h3>
+      <p className="small muted" style={{ marginTop: 0 }}>
+        Téléchargez-les autant de fois que nécessaire : ce lien reste valable depuis
+        votre suivi de commande.
+      </p>
+      <div className="stack">
+        {order.downloads.map((group) => (
+          <div key={group.productId}>
+            <strong className="small">{group.productName}</strong>
+            <ul className="download-list">
+              {group.files.map((file) => (
+                <li key={file.url}>
+                  <a className="btn btn-secondary btn-sm" href={file.url} download>
+                    ⬇ {file.name}
+                  </a>
+                  <span className="small muted">
+                    {fileExtension(file.name) ? `${fileExtension(file.name)} · ` : ""}
+                    {formatBytes(file.sizeBytes)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function OrderDetails({ order }: { order: PublicOrderView }) {
+  const digitalOnly =
+    order.items.length > 0 && order.items.every((item) => item.kind === "digital");
+
   return (
     <div className="stack-lg">
       <section className="card">
@@ -94,6 +153,11 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
                 <tr key={item.sku + item.name}>
                   <td>
                     <strong>{item.name}</strong>
+                    {item.kind === "digital" ? (
+                      <span className="badge badge-info" style={{ marginLeft: 8 }}>
+                        Fichier
+                      </span>
+                    ) : null}
                     <div className="product-sku">{item.sku}</div>
                   </td>
                   <td className="num">
@@ -121,11 +185,13 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
             </div>
           ) : null}
           <div className="summary-row">
-            <span>Livraison</span>
+            <span>{digitalOnly ? "Remise" : "Livraison"}</span>
             <strong>
-              {order.shippingCents > 0
-                ? formatPrice(order.shippingCents, order.currency)
-                : "Offerte"}
+              {digitalOnly
+                ? "Téléchargement"
+                : order.shippingCents > 0
+                  ? formatPrice(order.shippingCents, order.currency)
+                  : "Offerte"}
             </strong>
           </div>
           <div className="summary-row summary-total">
@@ -135,9 +201,11 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
         </div>
       </section>
 
+      <Downloads order={order} />
+
       <div className="detail-grid">
         <section className="card">
-          <h3 className="card-title">Livraison</h3>
+          <h3 className="card-title">{digitalOnly ? "Facturation" : "Livraison"}</h3>
           <p className="small" style={{ margin: 0 }}>
             {order.customer.firstName} {order.customer.lastName}
             <br />

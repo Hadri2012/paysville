@@ -25,19 +25,24 @@ export async function POST(request: Request) {
     const items = parseCartItems(body.items);
     if (items.length === 0) throw errors.emptyCart();
 
-    const identity = parseCheckoutIdentity(body);
-    if (!identity.terms) throw errors.termsRequired();
-
     const promoCode = cleanString(body.promoCode, 40) || null;
+
+    // Un panier entièrement composé de fichiers ne s'expédie pas : l'adresse
+    // postale devient facultative. Il faut donc connaître la nature du panier
+    // avant de valider le formulaire — d'où ce devis préalable, sans adresse.
+    const preview = buildQuote(await readState(), { items, promoCode, strict: false });
+
+    const identity = parseCheckoutIdentity(body, { requireAddress: !preview.digitalOnly });
+    if (!identity.terms) throw errors.termsRequired();
 
     // Code de contournement pour valider une commande sans paiement Stripe réel
     // (test uniquement — voir lib/testBypass.ts). Inactif par défaut, et refuse de
     // fonctionner si une clé Stripe de production est configurée.
     const bypass = verifyTestBypassCode(body.testBypassCode);
 
-    // Pré-vérification (produits, stock, promo, zone de livraison) : elle donne au
-    // client un message précis avant même de parler de paiement. Elle est refaite
-    // dans la transaction ci-dessous, qui seule fait autorité.
+    // Pré-vérification stricte (produits, stock, promo, zone de livraison) : elle
+    // donne au client un message précis avant même de parler de paiement. Elle est
+    // refaite dans la transaction ci-dessous, qui seule fait autorité.
     buildQuote(await readState(), {
       items,
       promoCode,

@@ -28,10 +28,14 @@ export default async function AdminDashboard() {
 
   const live = state.products.filter((p) => !p.archived);
   const activeProducts = live.filter((p) => p.active);
-  const withStock = live.map((product) => ({
-    product,
-    available: availableStock(state, product),
-  }));
+  // Les fichiers téléchargeables n'ont pas de stock : les inclure ici les ferait
+  // remonter en « rupture » à tort, sur la seule foi d'un stock resté à zéro.
+  const withStock = live
+    .filter((product) => product.kind !== "digital")
+    .map((product) => ({
+      product,
+      available: availableStock(state, product),
+    }));
   const lowStock = withStock.filter(
     (item) => item.available > 0 && item.available <= lowStockThreshold,
   );
@@ -56,6 +60,18 @@ export default async function AdminDashboard() {
   if (!state.settings.legal.companyName || !state.settings.legal.email) {
     warnings.push(
       "Les informations légales (CGV, confidentialité) sont incomplètes : à compléter dans Paramètres.",
+    );
+  }
+  const emptyDigital = activeProducts.filter(
+    (product) => product.kind === "digital" && product.digitalFiles.length === 0,
+  );
+  if (emptyDigital.length > 0) {
+    warnings.push(
+      `${emptyDigital.length} produit${emptyDigital.length > 1 ? "s" : ""} numérique${
+        emptyDigital.length > 1 ? "s sont visibles sans aucun fichier joint" : " est visible sans aucun fichier joint"
+      } (${emptyDigital.map((p) => p.name).join(", ")}) : ${
+        emptyDigital.length > 1 ? "ils ne peuvent pas être achetés" : "il ne peut pas être acheté"
+      }. Ajoutez les fichiers depuis Produits → Fichiers / 3D.`,
     );
   }
 

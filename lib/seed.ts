@@ -184,6 +184,9 @@ export function initialState(): State {
     category: entry.category,
     sortOrder: (index + 1) * 10,
     archived: false,
+    kind: "physical",
+    digitalFiles: [],
+    model3d: null,
     createdAt: now,
     updatedAt: now,
   }));

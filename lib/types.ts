@@ -19,6 +19,41 @@ export type PromotionType = "fixed" | "percent";
 
 export type ReservationStatus = "active" | "consumed" | "released";
 
+/**
+ * Nature d'un produit : objet expédié, ou fichier(s) remis par téléchargement.
+ * Un produit numérique n'a ni stock ni frais de livraison — l'achat donne accès
+ * aux fichiers attachés, quel que soit leur format.
+ */
+export type ProductKind = "physical" | "digital";
+
+/**
+ * Fichier vendu avec un produit numérique. Seules les métadonnées vivent ici :
+ * le contenu binaire est rangé dans le magasin d'assets (`lib/assets.ts`), pour
+ * ne pas alourdir le document JSON relu à chaque requête.
+ */
+export interface DigitalFile {
+  /** Identifiant de l'asset binaire correspondant. */
+  id: string;
+  /** Nom de fichier d'origine, renvoyé tel quel au téléchargement. */
+  name: string;
+  sizeBytes: number;
+  contentType: string;
+  createdAt: string;
+}
+
+/** Modèle 3D (GLB) affiché en visionneuse interactive sur la fiche produit. */
+export interface Product3DModel {
+  /** Identifiant de l'asset binaire correspondant. */
+  id: string;
+  name: string;
+  sizeBytes: number;
+}
+
+/** Bornes des fichiers joints à un produit (vendus ou modèle 3D). */
+export const MAX_DIGITAL_FILES = 10;
+export const MAX_DIGITAL_FILE_BYTES = 10_000_000;
+export const MAX_MODEL3D_BYTES = 6_000_000;
+
 export interface Product {
   id: string;
   sku: string;
@@ -32,6 +67,12 @@ export interface Product {
   category: string;
   sortOrder: number;
   archived: boolean;
+  /** `physical` (défaut) ou `digital` : fichier(s) livrés par téléchargement. */
+  kind: ProductKind;
+  /** Fichiers remis à l'achat quand `kind === "digital"`. */
+  digitalFiles: DigitalFile[];
+  /** Modèle 3D optionnel (aperçu interactif), quel que soit le type de produit. */
+  model3d: Product3DModel | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +85,8 @@ export interface OrderItem {
   quantity: number;
   lineTotalCents: number;
   imageUrl: string;
+  /** Nature de l'article au moment de l'achat : conditionne stock et livraison. */
+  kind: ProductKind;
 }
 
 export interface OrderCustomer {

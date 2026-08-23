@@ -80,6 +80,12 @@ export const errors = {
       "Aucune commande ne correspond à ces informations.",
       404,
     ),
+  downloadNotAvailable: () =>
+    new AppError(
+      "download_not_available",
+      "Ce fichier n'est pas disponible au téléchargement pour cette commande.",
+      404,
+    ),
   unauthorized: () =>
     new AppError("unauthorized", "Authentification requise.", 401),
   invalidCredentials: () =>

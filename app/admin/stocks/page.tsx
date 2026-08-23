@@ -11,8 +11,10 @@ export default async function AdminStockPage() {
   await requireAdminPage();
   const state = await readState();
 
+  // Les produits numériques n'ont pas de stock à gérer : cette page ne leur
+  // proposerait qu'un compteur sans effet.
   const rows: StockRow[] = state.products
-    .filter((product) => !product.archived)
+    .filter((product) => !product.archived && product.kind !== "digital")
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "fr"))
     .map((product) => ({
       id: product.id,

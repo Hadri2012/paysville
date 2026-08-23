@@ -4,8 +4,19 @@
  *
  *   npm run selftest
  */
+import { deleteAsset, readAsset, saveAsset } from "../lib/assets";
+import {
+  decodeUpload,
+  fileExtension,
+  fileFormats,
+  formatBytes,
+  isGlbFile,
+  newAssetId,
+  orderDownloads,
+  sanitizeFileName,
+} from "../lib/digital";
 import { newId } from "../lib/ids";
-import { confirmOrderPayment, createPendingOrder } from "../lib/orders";
+import { confirmOrderPayment, createPendingOrder, publicOrderView } from "../lib/orders";
 import { cartSuggestions } from "../lib/recommendations";
 import {
   approvedReviews,
@@ -27,8 +38,8 @@ import {
   sweepReservations,
 } from "../lib/shop";
 import { readState, transaction } from "../lib/store";
-import { MAX_REVIEW_PHOTOS } from "../lib/types";
-import type { CheckoutIdentity } from "../lib/validation";
+import { MAX_REVIEW_PHOTOS, type Product } from "../lib/types";
+import { parseCheckoutIdentity, type CheckoutIdentity } from "../lib/validation";
 
 let failures = 0;
 
@@ -561,6 +572,220 @@ async function main() {
     "panier sans e-mail : code appliqué mais signalé",
     anonymousQuote.discountCents === 60 && anonymousQuote.promoOncePerCustomer,
   );
+
+  console.log("\n== Fichiers numériques : utilitaires ==");
+  check("extension lisible", fileExtension("modele-v2.STL") === "STL");
+  check("extension absente", fileExtension("sans-extension") === "");
+  check(
+    "formats dédoublonnés dans l'ordre",
+    fileFormats([{ name: "a.stl" }, { name: "b.pdf" }, { name: "c.STL" }]).join(",") ===
+      "STL,PDF",
+  );
+  check("taille en Mo", formatBytes(2_100_000) === "2,1 Mo");
+  check("taille en Ko", formatBytes(340_000) === "340 Ko");
+  check(
+    "nom de fichier débarrassé de son chemin",
+    sanitizeFileName("../../etc/passwd") === "passwd",
+  );
+  check("nom vide remplacé", sanitizeFileName("") === "fichier");
+
+  const decoded = decodeUpload(
+    { name: "notice.txt", data: `data:text/plain;base64,${Buffer.from("bonjour").toString("base64")}` },
+    1000,
+  );
+  check(
+    "data-URI décodée avec son type",
+    decoded.name === "notice.txt" &&
+      decoded.contentType === "text/plain" &&
+      decoded.bytes.toString() === "bonjour",
+  );
+  check(
+    "base64 nu accepté, type générique",
+    decodeUpload({ name: "x.bin", data: Buffer.from("ab").toString("base64") }, 100)
+      .contentType === "application/octet-stream",
+  );
+  expectThrows(
+    "fichier trop volumineux refusé",
+    () => decodeUpload({ name: "gros.stl", data: Buffer.alloc(500).toString("base64") }, 100),
+    "validation_error",
+  );
+  expectThrows(
+    "contenu vide refusé",
+    () => decodeUpload({ name: "vide.stl", data: "" }, 100),
+    "validation_error",
+  );
+  check(
+    "en-tête GLB reconnue",
+    isGlbFile(Buffer.concat([Buffer.from("glTF"), Buffer.alloc(20)])),
+  );
+  check("fichier non GLB rejeté", !isGlbFile(Buffer.from("solid ascii stl content")));
+
+  console.log("\n== Magasin d'assets ==");
+  const assetId = newAssetId();
+  await saveAsset(assetId, Buffer.from("contenu du fichier vendu"));
+  const roundTrip = await readAsset(assetId);
+  check("asset relu à l'identique", roundTrip?.toString() === "contenu du fichier vendu");
+  check("identifiant inconnu : rien", (await readAsset(newAssetId())) === null);
+  check("identifiant invalide : rien", (await readAsset("../../etc/passwd")) === null);
+  await deleteAsset(assetId);
+  check("asset supprimé", (await readAsset(assetId)) === null);
+
+  console.log("\n== Produit numérique : vente et remise ==");
+  const digitalAssetId = newAssetId();
+  await saveAsset(digitalAssetId, Buffer.from("STL du porte-casque"));
+  const digitalId = await transaction((state) => {
+    const now = new Date().toISOString();
+    const product: Product = {
+      id: newId(),
+      sku: "DIGI1",
+      slug: "modele-porte-casque",
+      name: "Modèle 3D — Porte casque",
+      description: "Le fichier source à imprimer chez soi.",
+      priceCents: 500,
+      stock: 0,
+      imageUrl: "",
+      active: true,
+      category: "Fichiers",
+      sortOrder: 999,
+      archived: false,
+      kind: "digital",
+      digitalFiles: [
+        {
+          id: digitalAssetId,
+          name: "porte-casque.stl",
+          sizeBytes: 19,
+          contentType: "application/octet-stream",
+          createdAt: now,
+        },
+      ],
+      model3d: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.products.push(product);
+    return product.id;
+  });
+
+  const state10 = await readState();
+  const digitalPublic = listPublicProducts(state10).find((p) => p.id === digitalId)!;
+  check(
+    "fichier vendable malgré un stock à zéro",
+    digitalPublic.inStock && digitalPublic.available === 1,
+  );
+  check(
+    "formats et compteur exposés au catalogue",
+    digitalPublic.kind === "digital" &&
+      digitalPublic.fileCount === 1 &&
+      digitalPublic.fileFormats.join(",") === "STL",
+  );
+
+  const digitalQuote = buildQuote(state10, {
+    items: [{ productId: digitalId, quantity: 5 }],
+    postalCode: "9999",
+    city: "Hors zone",
+  });
+  check(
+    "quantité ramenée à un exemplaire",
+    digitalQuote.lines[0]?.quantity === 1 &&
+      digitalQuote.issues.some((issue) => issue.code === "digital_single"),
+  );
+  check(
+    "panier tout numérique : ni frais ni zone à couvrir",
+    digitalQuote.digitalOnly &&
+      digitalQuote.hasDigital &&
+      digitalQuote.shippingCents === 0 &&
+      digitalQuote.shippingCovered === true,
+    `covered=${digitalQuote.shippingCovered}`,
+  );
+  const mixedQuote = buildQuote(state10, {
+    items: [
+      { productId: digitalId, quantity: 1 },
+      { productId: p2.id, quantity: 1 },
+    ],
+    postalCode: "1435",
+    city: "Corbais",
+  });
+  check(
+    "panier mixte : livraison toujours résolue",
+    mixedQuote.hasDigital && !mixedQuote.digitalOnly && mixedQuote.shippingCovered === true,
+  );
+
+  check(
+    "adresse facultative pour une commande de fichiers",
+    parseCheckoutIdentity(
+      {
+        firstName: "Test",
+        lastName: "Client",
+        email: "fichier@example.org",
+        phone: "+32470000000",
+        terms: true,
+      },
+      { requireAddress: false },
+    ).customer.email === "fichier@example.org",
+  );
+  expectThrows(
+    "adresse exigée pour un objet à livrer",
+    () =>
+      parseCheckoutIdentity({
+        firstName: "Test",
+        lastName: "Client",
+        email: "objet@example.org",
+        phone: "+32470000000",
+        terms: true,
+      }),
+    "invalid_customer_data",
+  );
+
+  const digitalOrder = await transaction((state) => {
+    const quote = buildQuote(state, { items: [{ productId: digitalId, quantity: 1 }] });
+    return createPendingOrder(state, { quote, identity });
+  });
+  check(
+    "aucun stock réservé pour un fichier",
+    (await readState()).reservations.find((r) => r.orderId === digitalOrder.id)?.items
+      .length === 0,
+  );
+  check(
+    "avant paiement : aucun téléchargement",
+    orderDownloads(await readState(), digitalOrder).length === 0,
+  );
+
+  await transaction((state) => {
+    confirmOrderPayment(state, digitalOrder.id, {});
+  });
+  const state11 = await readState();
+  const paidDigital = state11.orders.find((o) => o.id === digitalOrder.id)!;
+  const downloads = orderDownloads(state11, paidDigital);
+  check(
+    "après paiement : le fichier est remis",
+    downloads.length === 1 && downloads[0].files[0]?.name === "porte-casque.stl",
+  );
+  check(
+    "le lien porte le jeton de la commande",
+    publicOrderView(paidDigital, state11).downloads[0]?.files[0]?.url.includes(
+      paidDigital.accessToken,
+    ) === true,
+  );
+  check(
+    "vue publique sans état : aucun lien",
+    publicOrderView(paidDigital).downloads.length === 0,
+  );
+  check(
+    "le stock du produit numérique n'a pas bougé",
+    state11.products.find((p) => p.id === digitalId)?.stock === 0,
+  );
+
+  const refunded = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === digitalOrder.id)!;
+    order.status = "refunded";
+    order.paymentStatus = "refunded";
+    return order;
+  });
+  check(
+    "commande remboursée : accès révoqué",
+    orderDownloads(await readState(), refunded).length === 0,
+  );
+  await deleteAsset(digitalAssetId);
 
   console.log(
     failures === 0

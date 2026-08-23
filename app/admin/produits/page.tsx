@@ -29,6 +29,19 @@ export default async function AdminProductsPage() {
       sortOrder: product.sortOrder,
       active: product.active,
       archived: product.archived,
+      kind: product.kind,
+      digitalFiles: product.digitalFiles.map((file) => ({
+        id: file.id,
+        name: file.name,
+        sizeBytes: file.sizeBytes,
+      })),
+      model3d: product.model3d
+        ? {
+            id: product.model3d.id,
+            name: product.model3d.name,
+            sizeBytes: product.model3d.sizeBytes,
+          }
+        : null,
     }));
 
   return (

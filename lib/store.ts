@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -120,6 +120,22 @@ function migrate(state: State): State {
     }
     for (const promotion of state.promotions) {
       promotion.oncePerCustomer ??= false;
+    }
+  }
+
+  // v6 -> v7 : produits numériques (fichiers vendus par téléchargement) et modèle
+  // 3D optionnel. Tout ce qui existe est un produit physique sans fichier ni
+  // modèle : l'état neutre, qui ne change rien au comportement en place.
+  if (state.schemaVersion < 7) {
+    for (const product of state.products) {
+      product.kind ??= "physical";
+      product.digitalFiles ??= [];
+      product.model3d ??= null;
+    }
+    for (const order of state.orders) {
+      for (const item of order.items) {
+        item.kind ??= "physical";
+      }
     }
   }
 

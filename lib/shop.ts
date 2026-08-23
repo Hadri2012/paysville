@@ -1,3 +1,4 @@
+import { fileFormats } from "./digital";
 import { errors } from "./errors";
 import {
   MAX_DELIVERY_DISTANCE_KM,
@@ -6,7 +7,7 @@ import {
   distanceFromHubKm,
 } from "./geo";
 import { productImage } from "./images";
-import type { Product, Promotion, ShippingZone, State } from "./types";
+import type { Product, ProductKind, Promotion, ShippingZone, State } from "./types";
 import { normalizeLoose, normalizeSearch, type CartLineInput } from "./validation";
 
 /* -------------------------------------------------------------------------- */
@@ -63,6 +64,16 @@ export function availableStock(state: State, product: Product): number {
   return Math.max(0, product.stock - reservedQuantity(state, product.id));
 }
 
+/**
+ * Un produit numérique est « en stock » tant qu'il a au moins un fichier à
+ * livrer — il n'a ni stock physique ni réservation. La quantité vendable vaut 1 :
+ * acheter deux fois le même fichier n'a pas de sens, l'achat donne l'accès.
+ */
+export function purchasableQuantity(state: State, product: Product): number {
+  if (product.kind === "digital") return product.digitalFiles.length > 0 ? 1 : 0;
+  return availableStock(state, product);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Catalogue public                                                           */
 /* -------------------------------------------------------------------------- */
@@ -89,11 +100,19 @@ export interface PublicProduct {
   inStock: boolean;
   /** Ajouté au catalogue il y a moins de 30 jours. */
   isNew: boolean;
+  /** `digital` : fichier(s) livrés par téléchargement immédiat après paiement. */
+  kind: ProductKind;
+  /** Formats des fichiers vendus (« STL », « PDF »…), vide pour un produit physique. */
+  fileFormats: string[];
+  /** Nombre de fichiers remis à l'achat (0 pour un produit physique). */
+  fileCount: number;
+  /** Un modèle 3D interactif est disponible sur la fiche produit. */
+  has3dModel: boolean;
   createdAt: string;
 }
 
 export function toPublicProduct(state: State, product: Product): PublicProduct {
-  const available = availableStock(state, product);
+  const available = purchasableQuantity(state, product);
   return {
     id: product.id,
     sku: product.sku,
@@ -106,6 +125,10 @@ export function toPublicProduct(state: State, product: Product): PublicProduct {
     available,
     inStock: available > 0,
     isNew: isNewProduct(product),
+    kind: product.kind,
+    fileFormats: product.kind === "digital" ? fileFormats(product.digitalFiles) : [],
+    fileCount: product.kind === "digital" ? product.digitalFiles.length : 0,
+    has3dModel: product.model3d !== null,
     createdAt: product.createdAt,
   };
 }
@@ -413,6 +436,8 @@ export interface QuoteLine {
   quantity: number;
   lineTotalCents: number;
   available: number;
+  /** `digital` : livré par téléchargement, sans stock ni frais de port. */
+  kind: ProductKind;
 }
 
 export interface QuoteIssue {
@@ -437,6 +462,10 @@ export interface Quote {
   shippingCents: number;
   shippingCovered: boolean | null;
   shippingMessage: string | null;
+  /** Au moins un article est un fichier téléchargeable. */
+  hasDigital: boolean;
+  /** Tous les articles sont des fichiers : aucune livraison physique. */
+  digitalOnly: boolean;
   totalCents: number;
   currency: string;
 }
@@ -477,14 +506,17 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
       continue;
     }
 
-    const available = availableStock(state, product);
+    const available = purchasableQuantity(state, product);
     if (available <= 0) {
       if (strict) throw errors.outOfStock(product.name);
       issues.push({
         productId: product.id,
         name: product.name,
         code: "out_of_stock",
-        message: `« ${product.name} » est en rupture de stock et a été retiré du panier.`,
+        message:
+          product.kind === "digital"
+            ? `« ${product.name} » n'est pas encore disponible au téléchargement et a été retiré du panier.`
+            : `« ${product.name} » est en rupture de stock et a été retiré du panier.`,
         quantity: 0,
       });
       continue;
@@ -492,17 +524,32 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
 
     let quantity = item.quantity;
     if (quantity > available) {
-      if (strict) throw errors.insufficientStock(product.name, available);
-      issues.push({
-        productId: product.id,
-        name: product.name,
-        code: "insufficient_stock",
-        message: `Quantité ajustée : il ne reste que ${available} exemplaire${
-          available > 1 ? "s" : ""
-        } de « ${product.name} ».`,
-        quantity: available,
-      });
-      quantity = available;
+      // Produit numérique : l'achat donne l'accès aux fichiers, une seule fois
+      // suffit — la quantité est ramenée à 1 plutôt que refusée.
+      if (product.kind === "digital") {
+        if (!strict) {
+          issues.push({
+            productId: product.id,
+            name: product.name,
+            code: "digital_single",
+            message: `« ${product.name} » est un fichier téléchargeable : un seul exemplaire par commande.`,
+            quantity: available,
+          });
+        }
+        quantity = available;
+      } else {
+        if (strict) throw errors.insufficientStock(product.name, available);
+        issues.push({
+          productId: product.id,
+          name: product.name,
+          code: "insufficient_stock",
+          message: `Quantité ajustée : il ne reste que ${available} exemplaire${
+            available > 1 ? "s" : ""
+          } de « ${product.name} ».`,
+          quantity: available,
+        });
+        quantity = available;
+      }
     }
 
     lines.push({
@@ -515,6 +562,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
       quantity,
       lineTotalCents: product.priceCents * quantity,
       available,
+      kind: product.kind,
     });
   }
 
@@ -548,12 +596,19 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
     }
   }
 
+  const hasDigital = lines.some((line) => line.kind === "digital");
+  const digitalOnly = lines.length > 0 && lines.every((line) => line.kind === "digital");
+
   let shippingCents = 0;
   let shippingCovered: boolean | null = null;
   let shippingMessage: string | null = null;
   const postalCode = (input.postalCode ?? "").trim();
   const city = (input.city ?? "").trim();
-  if (postalCode) {
+  if (digitalOnly) {
+    // Rien à expédier : la remise se fait par téléchargement, l'adresse ne sert
+    // qu'à la facturation et la zone de livraison ne limite pas la vente.
+    shippingCovered = true;
+  } else if (postalCode) {
     const shipping = resolveShipping(state, postalCode, city);
     shippingCovered = shipping.covered;
     if (shipping.covered) {
@@ -577,6 +632,8 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
     shippingCents,
     shippingCovered,
     shippingMessage,
+    hasDigital,
+    digitalOnly,
     totalCents: Math.max(0, subtotalCents - discountCents) + shippingCents,
     currency: state.settings.currency,
   };

@@ -27,6 +27,7 @@ export async function POST(request: Request) {
 
     // On demande à Stripe l'état réel du paiement si celui-ci est encore en attente.
     const refreshed = (await syncOrderFromStripe(order.number)) ?? order;
-    return jsonOk({ order: publicOrderView(refreshed) });
+    // `state` permet d'inclure les liens de téléchargement des fichiers achetés.
+    return jsonOk({ order: publicOrderView(refreshed, state) });
   });
 }

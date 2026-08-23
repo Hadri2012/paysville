@@ -177,8 +177,15 @@ export default function CartPage() {
                     </div>
                     <div className="product-sku">{line.sku}</div>
                     <div className="small muted">
-                      {formatPrice(line.unitPriceCents, currency)} l&apos;unité
+                      {line.kind === "digital"
+                        ? formatPrice(line.unitPriceCents, currency)
+                        : `${formatPrice(line.unitPriceCents, currency)} l'unité`}
                     </div>
+                    {line.kind === "digital" ? (
+                      <span className="badge badge-info">
+                        Fichier — téléchargement immédiat
+                      </span>
+                    ) : null}
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
@@ -190,24 +197,30 @@ export default function CartPage() {
                   </div>
 
                   <div className="cart-line-right">
-                    <div className="qty">
-                      <button
-                        type="button"
-                        aria-label={`Diminuer la quantité de ${line.name}`}
-                        onClick={() => setQuantity(line.productId, line.quantity - 1)}
-                      >
-                        −
-                      </button>
-                      <span className="value">{line.quantity}</span>
-                      <button
-                        type="button"
-                        aria-label={`Augmenter la quantité de ${line.name}`}
-                        disabled={line.quantity >= line.available}
-                        onClick={() => setQuantity(line.productId, line.quantity + 1)}
-                      >
-                        +
-                      </button>
-                    </div>
+                    {/* Un fichier s'achète une fois : le sélecteur de quantité
+                        n'aurait rien à régler. */}
+                    {line.kind === "digital" ? (
+                      <span className="small muted">1 exemplaire</span>
+                    ) : (
+                      <div className="qty">
+                        <button
+                          type="button"
+                          aria-label={`Diminuer la quantité de ${line.name}`}
+                          onClick={() => setQuantity(line.productId, line.quantity - 1)}
+                        >
+                          −
+                        </button>
+                        <span className="value">{line.quantity}</span>
+                        <button
+                          type="button"
+                          aria-label={`Augmenter la quantité de ${line.name}`}
+                          disabled={line.quantity >= line.available}
+                          onClick={() => setQuantity(line.productId, line.quantity + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                     <strong>{formatPrice(line.lineTotalCents, currency)}</strong>
                   </div>
                 </div>
@@ -269,8 +282,12 @@ export default function CartPage() {
               </div>
             ) : null}
             <div className="summary-row">
-              <span>Livraison</span>
-              <span className="muted small">Calculée après votre adresse</span>
+              <span>{quote?.digitalOnly ? "Remise" : "Livraison"}</span>
+              <span className="muted small">
+                {quote?.digitalOnly
+                  ? "Téléchargement immédiat"
+                  : "Calculée après votre adresse"}
+              </span>
             </div>
             <div className="summary-row summary-total">
               <span>Total</span>

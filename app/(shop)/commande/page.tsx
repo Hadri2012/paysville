@@ -204,6 +204,9 @@ function CheckoutForm() {
   }
 
   const currency = quote?.currency ?? "EUR";
+  // Panier entièrement numérique : rien à expédier, l'adresse devient facultative
+  // et la ligne « Livraison » laisse place à la remise par téléchargement.
+  const digitalOnly = quote?.digitalOnly === true;
   const shippingKnown = quote?.shippingCovered === true;
 
   return (
@@ -308,10 +311,21 @@ function CheckoutForm() {
 
           <section className="card">
             <fieldset>
-              <legend>Adresse de livraison</legend>
+              <legend>{digitalOnly ? "Adresse de facturation" : "Adresse de livraison"}</legend>
+
+              {digitalOnly ? (
+                <div className="alert alert-info" style={{ marginBottom: 14 }} role="status">
+                  <div>
+                    Votre commande ne contient que des fichiers téléchargeables : rien
+                    n&apos;est expédié. Ces champs sont facultatifs, remplissez-les
+                    seulement si vous avez besoin d&apos;une adresse sur votre facture.
+                  </div>
+                </div>
+              ) : null}
+
               <div className="form-grid">
                 <div className="field">
-                  <label htmlFor="street">Rue *</label>
+                  <label htmlFor="street">Rue {digitalOnly ? "" : "*"}</label>
                   <input
                     id="street"
                     name="street"
@@ -319,7 +333,7 @@ function CheckoutForm() {
                     value={form.street}
                     onChange={update("street")}
                     aria-invalid={Boolean(fieldErrors.street)}
-                    required
+                    required={!digitalOnly}
                   />
                   {fieldErrors.street ? (
                     <span className="field-error">{fieldErrors.street}</span>
@@ -327,14 +341,14 @@ function CheckoutForm() {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="streetNumber">Numéro *</label>
+                  <label htmlFor="streetNumber">Numéro {digitalOnly ? "" : "*"}</label>
                   <input
                     id="streetNumber"
                     name="streetNumber"
                     value={form.streetNumber}
                     onChange={update("streetNumber")}
                     aria-invalid={Boolean(fieldErrors.streetNumber)}
-                    required
+                    required={!digitalOnly}
                   />
                   {fieldErrors.streetNumber ? (
                     <span className="field-error">{fieldErrors.streetNumber}</span>
@@ -354,7 +368,7 @@ function CheckoutForm() {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="postalCode">Code postal *</label>
+                  <label htmlFor="postalCode">Code postal {digitalOnly ? "" : "*"}</label>
                   <input
                     id="postalCode"
                     name="postalCode"
@@ -363,7 +377,7 @@ function CheckoutForm() {
                     value={form.postalCode}
                     onChange={update("postalCode")}
                     aria-invalid={Boolean(fieldErrors.postalCode)}
-                    required
+                    required={!digitalOnly}
                   />
                   {fieldErrors.postalCode ? (
                     <span className="field-error">{fieldErrors.postalCode}</span>
@@ -371,7 +385,7 @@ function CheckoutForm() {
                 </div>
 
                 <div className="field">
-                  <label htmlFor="city">Ville / village *</label>
+                  <label htmlFor="city">Ville / village {digitalOnly ? "" : "*"}</label>
                   <input
                     id="city"
                     name="city"
@@ -379,7 +393,7 @@ function CheckoutForm() {
                     value={form.city}
                     onChange={update("city")}
                     aria-invalid={Boolean(fieldErrors.city)}
-                    required
+                    required={!digitalOnly}
                   />
                   {fieldErrors.city ? (
                     <span className="field-error">{fieldErrors.city}</span>
@@ -387,7 +401,7 @@ function CheckoutForm() {
                 </div>
 
                 <div className="field field-full">
-                  <label htmlFor="country">Pays *</label>
+                  <label htmlFor="country">Pays {digitalOnly ? "" : "*"}</label>
                   <input
                     id="country"
                     name="country"
@@ -395,7 +409,7 @@ function CheckoutForm() {
                     value={form.country}
                     onChange={update("country")}
                     aria-invalid={Boolean(fieldErrors.country)}
-                    required
+                    required={!digitalOnly}
                   />
                   {fieldErrors.country ? (
                     <span className="field-error">{fieldErrors.country}</span>
@@ -411,7 +425,7 @@ function CheckoutForm() {
                   </div>
                 </div>
               ) : null}
-              {shippingKnown ? (
+              {shippingKnown && !digitalOnly ? (
                 <div className="alert alert-success" style={{ marginTop: 14 }} role="status">
                   Nous livrons bien à cette adresse.
                 </div>
@@ -527,9 +541,11 @@ function CheckoutForm() {
             </div>
           ) : null}
           <div className="summary-row">
-            <span>Livraison</span>
+            <span>{digitalOnly ? "Remise" : "Livraison"}</span>
             <strong>
-              {shippingKnown ? (
+              {digitalOnly ? (
+                "Téléchargement"
+              ) : shippingKnown ? (
                 quote!.shippingCents > 0 ? (
                   formatPrice(quote!.shippingCents, currency)
                 ) : (
@@ -570,6 +586,12 @@ function CheckoutForm() {
           <p className="small muted center" style={{ marginTop: 10 }}>
             Le montant final est recalculé par notre serveur avant le paiement.
           </p>
+          {quote?.hasDigital ? (
+            <p className="small muted center" style={{ marginTop: 6 }}>
+              Vos fichiers seront téléchargeables dès le paiement confirmé, depuis la
+              page de confirmation et le suivi de commande.
+            </p>
+          ) : null}
           <p className="center" style={{ marginTop: 8 }}>
             <Link href="/panier" className="btn btn-ghost btn-sm">
               ← Modifier mon panier

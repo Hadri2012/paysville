@@ -17,7 +17,8 @@ export function ProductCard({
   lowStockThreshold: number;
   rating?: ReviewSummary;
 }) {
-  const low = product.inStock && product.available <= lowStockThreshold;
+  const digital = product.kind === "digital";
+  const low = !digital && product.inStock && product.available <= lowStockThreshold;
 
   return (
     <article className="product-card">
@@ -32,15 +33,28 @@ export function ProductCard({
         />
         {/* Un seul état à la fois sur la vignette : la rupture prime sur le stock
             bas, qui prime sur la nouveauté — l'information la plus décisive pour
-            l'achat passe devant. */}
+            l'achat passe devant. Un fichier annonce d'abord ce qu'il est. */}
         {!product.inStock ? (
-          <span className="badge badge-danger">Rupture de stock</span>
+          <span className="badge badge-danger">
+            {digital ? "Bientôt disponible" : "Rupture de stock"}
+          </span>
+        ) : digital ? (
+          <span className="badge badge-info">
+            {product.fileFormats.length > 0
+              ? product.fileFormats.slice(0, 3).join(" · ")
+              : "Fichier"}
+          </span>
         ) : low ? (
           <span className="badge badge-warning">
             Plus que {product.available} en stock
           </span>
         ) : product.isNew ? (
           <span className="badge badge-info">Nouveau</span>
+        ) : null}
+        {product.has3dModel ? (
+          <span className="badge badge-3d" title="Aperçu 3D disponible">
+            🧊 3D
+          </span>
         ) : null}
         <FavoriteButton productId={product.id} name={product.name} />
       </div>

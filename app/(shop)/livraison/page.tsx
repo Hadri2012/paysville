@@ -29,9 +29,18 @@ export default async function ShippingPage() {
         <div>
           <h1>Zone de livraison</h1>
           <p className="muted">
-            Hadrishop est une petite boutique locale : les commandes sont livrées
-            uniquement dans les communes listées ci-dessous.
+            Hadrishop est une petite boutique locale : les objets sont livrés uniquement
+            dans les communes listées ci-dessous.
           </p>
+        </div>
+
+        <div className="notice-box">
+          <strong>Vous achetez un fichier ?</strong> Aucune livraison n&apos;est
+          nécessaire et aucun frais n&apos;est facturé : les fichiers numériques (modèles
+          3D, documents, archives) sont téléchargeables dès la confirmation du paiement,
+          depuis la page de confirmation et depuis votre{" "}
+          <Link href="/suivi">suivi de commande</Link>, où que vous soyez. La zone
+          ci-dessous ne concerne que les objets expédiés.
         </div>
 
         {zones.length === 0 ? (
@@ -91,6 +100,16 @@ export default async function ShippingPage() {
             <li>
               Les frais de livraison éventuels sont ajoutés au récapitulatif avant le
               paiement.
+            </li>
+            <li>
+              Une commande qui ne contient que des fichiers échappe entièrement à cette
+              vérification : l&apos;adresse postale y devient facultative, et la ligne
+              « Livraison » du récapitulatif est remplacée par « Téléchargement ».
+            </li>
+            <li>
+              Une commande mixte (un objet et un fichier) est livrée normalement pour
+              l&apos;objet ; le fichier, lui, est disponible dès le paiement confirmé,
+              sans attendre l&apos;expédition.
             </li>
           </ul>
         </section>

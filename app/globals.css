@@ -1394,3 +1394,135 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
   gap: 12px;
   flex-wrap: wrap;
 }
+
+/* ------------------------------------------------------------------ */
+/* Produits numériques et aperçu 3D                                    */
+/* ------------------------------------------------------------------ */
+
+.badge-3d {
+  background: #1f2937;
+  color: #fff;
+}
+
+/* Pastille de format (STL, PDF…) : largeur fixe pour que les listes de
+   fichiers restent alignées quelle que soit la longueur de l'extension. */
+.file-format {
+  display: inline-block;
+  min-width: 46px;
+  text-align: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.digital-files {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface-2, transparent);
+}
+.digital-files ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+  display: grid;
+  gap: 8px;
+}
+.digital-files li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.download-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.download-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.admin-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: grid;
+  gap: 8px;
+}
+.admin-file-list > li,
+.admin-file-list > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.admin-file-name {
+  font-weight: 600;
+  word-break: break-word;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.product-assets {
+  padding: 6px 2px 2px;
+}
+.product-assets section + section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+/* Visionneuse 3D : la scène occupe un rapport fixe pour éviter que le
+   canvas ne saute de taille pendant le chargement du modèle. */
+.model3d {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.model3d-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.model3d-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  min-height: 260px;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .9), transparent 60%),
+    linear-gradient(160deg, #eef2f7, #dfe6ef);
+  touch-action: none;
+}
+.model3d-stage canvas { display: block; width: 100%; height: 100%; }
+.model3d-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: .9rem;
+}

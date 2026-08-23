@@ -51,10 +51,19 @@ export default async function PrivacyPage() {
           <li>votre prénom et votre nom ;</li>
           <li>votre adresse e-mail ;</li>
           <li>votre numéro de téléphone ;</li>
-          <li>votre adresse de livraison (rue, numéro, complément, code postal, commune, pays) ;</li>
+          <li>
+            votre adresse de livraison (rue, numéro, complément, code postal, commune,
+            pays) — facultative si votre commande ne contient que des fichiers
+            téléchargeables, puisqu&apos;il n&apos;y a rien à expédier ;
+          </li>
           <li>le contenu de votre commande et votre remarque éventuelle ;</li>
           <li>l&apos;identifiant technique de la transaction Stripe.</li>
         </ul>
+        <p>
+          Les téléchargements de fichiers achetés ne donnent lieu à aucun profilage :
+          Hadrishop ne tient pas de journal nominatif des téléchargements et ne mesure ni
+          leur nombre ni leur date par client.
+        </p>
         <p>
           <strong>
             Aucune donnée bancaire n&apos;est collectée ni stockée par Hadrishop.
@@ -97,6 +106,11 @@ export default async function PrivacyPage() {
           <li>
             une commande n&apos;est consultable qu&apos;avec son numéro <em>et</em>{" "}
             l&apos;adresse e-mail utilisée lors de l&apos;achat ;
+          </li>
+          <li>
+            les fichiers achetés ne sont remis qu&apos;à une commande effectivement payée,
+            au moyen d&apos;un lien portant un jeton d&apos;accès propre à cette commande :
+            connaître le nom d&apos;un fichier ne permet jamais de le télécharger ;
           </li>
           <li>le site est servi en HTTPS en production.</li>
         </ul>
