@@ -43,6 +43,13 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-23T21:05:00Z",
+    kind: "correctif",
+    title: "Un code promo pouvait sembler « déjà utilisé » après un paiement abandonné",
+    details:
+      "Un client dont une précédente tentative de paiement n'avait pas abouti (page fermée, session expirée) pouvait se voir refuser à tort un code promo à usage unique, avec le message « vous l'avez déjà utilisé » — alors que sa commande n'avait jamais été payée. La vérification faite juste avant de parler de paiement lisait l'état sans d'abord y actualiser les réservations expirées ; elle le fait désormais, comme le reste du parcours de commande.",
+  },
+  {
     at: "2026-08-23T20:25:00Z",
     kind: "correctif",
     title: "Un code promo à usage unique pouvait être réutilisé",

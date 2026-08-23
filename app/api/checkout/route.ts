@@ -43,7 +43,19 @@ export async function POST(request: Request) {
     // Pré-vérification stricte (produits, stock, promo, zone de livraison) : elle
     // donne au client un message précis avant même de parler de paiement. Elle est
     // refaite dans la transaction ci-dessous, qui seule fait autorité.
-    buildQuote(await readState(), {
+    //
+    // Le balayage des réservations expirées est indispensable ici aussi (pas
+    // seulement dans la transaction plus bas) : sans lui, une précédente commande
+    // du même client — abandonnée, jamais payée, dont la réservation a expiré —
+    // reste comptée par `hasUsedPromotion` tant que rien d'autre n'a déclenché de
+    // balayage. Un code « une fois par client » serait alors refusé à tort, avec
+    // un message affirmant que le client l'a « déjà utilisé » alors que sa seule
+    // commande avec ce code s'est simplement éteinte sans paiement. La mutation
+    // reste locale à cette lecture : elle ne fait pas autorité, seule la
+    // transaction ci-dessous écrit l'état.
+    const preCheckState = await readState();
+    sweepReservations(preCheckState);
+    buildQuote(preCheckState, {
       items,
       promoCode,
       customerEmail: identity.customer.email,

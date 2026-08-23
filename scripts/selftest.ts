@@ -746,6 +746,59 @@ async function main() {
     }).discountCents > 0,
   );
 
+  // Pré-vérification du checkout (avant la transaction qui, elle, balaie déjà) :
+  // une commande antérieure du même client, jamais payée, dont la réservation a
+  // expiré, ne doit JAMAIS faire échouer la pré-vérification avec « déjà
+  // utilisé » — même si rien d'autre n'a encore persisté le balayage de cette
+  // réservation précise. `/api/checkout` lit un état frais puis balaie cette
+  // copie LOCALE avant d'évaluer le code, exactement comme reproduit ici : sans
+  // ce balayage local, la commande abandonnée compterait à tort (bug réel
+  // reproduit en conditions réelles, corrigé dans app/api/checkout/route.ts).
+  const staleEmail = "abandon@example.org";
+  const staleOrder = await transaction((state) => {
+    const q = buildQuote(state, {
+      items: [{ productId: p3.id, quantity: 1 }],
+      promoCode: "TEST10",
+      customerEmail: staleEmail,
+      strict: true,
+    });
+    const order = createPendingOrder(state, {
+      quote: q,
+      identity: { ...identity, customer: { ...identity.customer, email: staleEmail } },
+    });
+    order.promotionId = oncePromoId;
+    return order;
+  });
+  // La réservation expire, mais rien ne persiste ce balayage (à la différence du
+  // scénario précédent) : c'est exactement l'état que lirait le pré-contrôle.
+  await transaction((state) => {
+    const reservation = state.reservations.find((r) => r.orderId === staleOrder.id)!;
+    reservation.expiresAt = new Date(Date.now() - 60_000).toISOString();
+  });
+  const staleStateUnswept = await readState();
+  expectThrows(
+    "sans balayage local, le pré-contrôle refuserait à tort (piège documenté)",
+    () =>
+      buildQuote(staleStateUnswept, {
+        items: [{ productId: p3.id, quantity: 1 }],
+        promoCode: "TEST10",
+        customerEmail: staleEmail,
+        strict: true,
+      }),
+    "invalid_promo",
+  );
+  const staleStateSweptLocally = await readState();
+  sweepReservations(staleStateSweptLocally);
+  check(
+    "avec le balayage local du pré-contrôle, le code redevient utilisable immédiatement",
+    buildQuote(staleStateSweptLocally, {
+      items: [{ productId: p3.id, quantity: 1 }],
+      promoCode: "TEST10",
+      customerEmail: staleEmail,
+      strict: true,
+    }).discountCents > 0,
+  );
+
   console.log("\n== Fichiers numériques : utilitaires ==");
   check("extension lisible", fileExtension("modele-v2.STL") === "STL");
   check("extension absente", fileExtension("sans-extension") === "");
