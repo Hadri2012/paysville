@@ -13,6 +13,7 @@ import {
 } from "../lib/digital";
 import { newId } from "../lib/ids";
 import { confirmOrderPayment, createPendingOrder, publicOrderView } from "../lib/orders";
+import { markRefunded } from "../lib/payments";
 import { cartSuggestions } from "../lib/recommendations";
 import {
   approvedReviews,
@@ -29,6 +30,7 @@ import {
   availableStock,
   buildQuote,
   listPublicProducts,
+  resolveShipping,
   salesCounts,
   sortProducts,
   sweepReservations,
@@ -136,6 +138,40 @@ async function main() {
         strict: true,
       }),
     "shipping_not_covered",
+  );
+
+  console.log("\n== Livraison : une zone déclarée fait toujours autorité ==");
+  // 1300 (Wavre) est à moins de 30 km de 1435 : sans zone déclarée, la distance
+  // suffirait à couvrir la livraison. Une zone existe pourtant pour ce code
+  // postal (voir `defaultShippingZones`) — désactivée ou restreinte à une autre
+  // commune, elle doit l'emporter sur le calcul automatique, jamais s'effacer
+  // devant lui.
+  const shippingState = structuredClone(state0);
+  const zone1300 = shippingState.shippingZones.find((z) => z.postalCode === "1300")!;
+  zone1300.active = false;
+  check(
+    "zone désactivée : livraison refusée (pas de repli par distance)",
+    resolveShipping(shippingState, "1300", "Wavre").covered === false,
+  );
+  zone1300.active = true;
+  zone1300.cities = ["Wavre"];
+  zone1300.feeCents = 500;
+  check(
+    "commune non listée dans la zone : livraison refusée",
+    resolveShipping(shippingState, "1300", "Bierges").covered === false,
+  );
+  const wavreResult = resolveShipping(shippingState, "1300", "Wavre");
+  check(
+    "commune listée : tarif manuel de la zone appliqué",
+    wavreResult.covered === true && wavreResult.feeCents === 500,
+  );
+  check(
+    "code postal sans aucune zone déclarée : repli par distance toujours actif",
+    resolveShipping(
+      { ...shippingState, shippingZones: [] },
+      "1300",
+      "Wavre",
+    ).covered === true,
   );
 
   expectThrows(
@@ -266,6 +302,46 @@ async function main() {
   check(
     "confirmation idempotente (webhook rejoué)",
     state4.products.find((p) => p.id === p4.id)!.stock === 0,
+  );
+
+  console.log("\n== Remboursement Stripe (webhook charge.refunded) ==");
+  const p6 = state4.products.find((p) => p.sku === "P6")!;
+  const refundOrder = await transaction((state) => {
+    const q = buildQuote(state, {
+      items: [{ productId: p6.id, quantity: 2 }],
+      postalCode: "1435",
+      city: "Corbais",
+      strict: true,
+    });
+    return createPendingOrder(state, { quote: q, identity });
+  });
+  await transaction((state) =>
+    confirmOrderPayment(state, refundOrder.id, { paymentIntentId: "pi_refund_selftest" }),
+  );
+  const stockBeforeRefund = (await readState()).products.find((p) => p.id === p6.id)!.stock;
+
+  await markRefunded("pi_refund_selftest", false);
+  const afterPartial = await readState();
+  const orderAfterPartial = afterPartial.orders.find((o) => o.id === refundOrder.id)!;
+  check(
+    "remboursement partiel : commande toujours payée",
+    orderAfterPartial.paymentStatus === "paid" && orderAfterPartial.status === "paid",
+  );
+  check(
+    "remboursement partiel : stock non touché",
+    afterPartial.products.find((p) => p.id === p6.id)!.stock === stockBeforeRefund,
+  );
+
+  await markRefunded("pi_refund_selftest", true);
+  const afterFull = await readState();
+  const orderAfterFull = afterFull.orders.find((o) => o.id === refundOrder.id)!;
+  check(
+    "remboursement total : commande marquée remboursée",
+    orderAfterFull.paymentStatus === "refunded" && orderAfterFull.status === "refunded",
+  );
+  check(
+    "remboursement total : stock remis en rayon",
+    afterFull.products.find((p) => p.id === p6.id)!.stock === stockBeforeRefund + 2,
   );
 
   console.log("\n== Expiration de réservation ==");

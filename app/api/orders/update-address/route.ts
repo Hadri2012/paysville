@@ -2,7 +2,7 @@ import { errors } from "@/lib/errors";
 import { handle, jsonOk, limit, readJson } from "@/lib/http";
 import { findOrderByNumber, publicOrderView } from "@/lib/orders";
 import { resolveShipping } from "@/lib/shop";
-import { transaction } from "@/lib/store";
+import { readState, transaction } from "@/lib/store";
 import { cleanString, parseCheckoutIdentity } from "@/lib/validation";
 import type { OrderAddress } from "@/lib/types";
 
@@ -79,6 +79,9 @@ export async function POST(request: Request) {
       return order;
     });
 
-    return jsonOk({ order: publicOrderView(updatedOrder) });
+    // Avec l'état, la vue reconstruit les liens de téléchargement : sans lui, une
+    // commande de fichiers déjà payée semblait perdre l'accès à ses fichiers après
+    // la simple correction d'une adresse.
+    return jsonOk({ order: publicOrderView(updatedOrder, await readState()) });
   });
 }

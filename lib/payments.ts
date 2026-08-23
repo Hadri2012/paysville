@@ -1,5 +1,5 @@
 import type Stripe from "stripe";
-import { confirmOrderPayment, releaseOrder } from "./orders";
+import { confirmOrderPayment, releaseOrder, restockOrder } from "./orders";
 import { sweepReservations } from "./shop";
 import { readState, transaction } from "./store";
 import { isStripeConfigured, paymentIntentId, retrieveSession } from "./stripe";
@@ -67,10 +67,24 @@ export async function syncOrderFromStripe(orderNumber: string): Promise<Order | 
   }
 }
 
-export async function markRefunded(paymentIntent: string): Promise<void> {
+/**
+ * Applique un remboursement Stripe confirmé par webhook (`charge.refunded`).
+ *
+ * `fullyRefunded` distingue un remboursement total d'un remboursement partiel
+ * (ex. un simple avoir sur les frais de port) : Stripe déclenche cet événement
+ * dans les deux cas, et un remboursement partiel ne doit ni clore la commande
+ * ni couper l'accès à des fichiers déjà payés.
+ */
+export async function markRefunded(paymentIntent: string, fullyRefunded: boolean): Promise<void> {
   await transaction((state) => {
     const order = state.orders.find((o) => o.stripePaymentIntentId === paymentIntent);
     if (!order || order.paymentStatus === "refunded") return;
+    if (!fullyRefunded) return;
+
+    // Le stock réservé par cette commande retourne en rayon, comme lors d'une
+    // annulation ou d'un remboursement fait depuis l'administration.
+    restockOrder(state, order);
+
     order.paymentStatus = "refunded";
     order.status = "refunded";
     order.updatedAt = new Date().toISOString();

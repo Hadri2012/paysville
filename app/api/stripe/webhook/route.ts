@@ -62,7 +62,10 @@ export async function POST(request: Request) {
           typeof charge.payment_intent === "string"
             ? charge.payment_intent
             : charge.payment_intent?.id;
-        if (intent) await markRefunded(intent);
+        // Stripe déclenche cet événement aussi pour un remboursement partiel
+        // (ex. un avoir sur les frais de port) : `refunded` ne vaut `true` que
+        // lorsque le montant remboursé couvre la totalité de la charge.
+        if (intent) await markRefunded(intent, charge.refunded);
         break;
       }
       default:

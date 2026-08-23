@@ -384,13 +384,19 @@ export function previewZoneFeeCents(
  * la distance (2 € / 5 km), jusqu'à 30 km à vol d'oiseau. Un frais explicite
  * saisi par l'admin pour une zone (`feeCents` non nul) reste prioritaire — la
  * distance ne sert qu'à défaut de tarif manuel.
+ *
+ * Le repli automatique par la distance ne joue que si l'admin n'a *rien* déclaré
+ * pour ce code postal. Dès qu'une zone existe pour ce code postal — même
+ * désactivée, même restreinte à d'autres communes — c'est elle qui fait foi :
+ * sinon désactiver une zone ou en restreindre les communes n'aurait aucun effet,
+ * la livraison continuant d'être acceptée via le calcul à la distance.
  */
 export function resolveShipping(state: State, postalCode: string, city: string): ShippingResult {
   const isHub = normalizeLoose(postalCode) === normalizeLoose(SHOP_HUB_POSTAL_CODE);
 
-  const zones = state.shippingZones.filter((z) => z.active);
-  const zone = zones.find((z) => {
-    if (!postalMatches(z, postalCode)) return false;
+  const zonesForPostal = state.shippingZones.filter((z) => postalMatches(z, postalCode));
+  const zone = zonesForPostal.find((z) => {
+    if (!z.active) return false;
     if (z.cities.length === 0) return true;
     const needle = normalizeLoose(city);
     return z.cities.some((c) => normalizeLoose(c) === needle);
@@ -407,6 +413,13 @@ export function resolveShipping(state: State, postalCode: string, city: string):
         ? distanceFeeCents(distanceKm)
         : Math.max(0, state.settings.defaultShippingFeeCents);
     return { covered: true, feeCents, zone };
+  }
+
+  // Une ou plusieurs zones existent pour ce code postal, mais aucune ne
+  // correspond (toutes désactivées, ou commune absente de leur liste) : refus
+  // explicite, sans repli automatique — l'admin s'est prononcé sur ce code postal.
+  if (zonesForPostal.length > 0) {
+    return { covered: false, feeCents: 0, zone: null };
   }
 
   // Aucune zone déclarée par l'admin pour ce code postal : couverture automatique
