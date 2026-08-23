@@ -7,21 +7,51 @@ export interface ReviewSummary {
   count: number;
 }
 
+/**
+ * Insultes et grossièretés, écrites sans accent (le texte est désaccentué avant
+ * comparaison). La liste ne contient que des termes réellement injurieux.
+ *
+ * Un avis négatif n'est pas une vulgarité : « nul », « pourri », « décevant »,
+ * « chiant » restent publiés. Un avis retenu à tort est invisible pour son auteur
+ * comme pour la boutique, alors qu'une grossièreté qui passe se corrige d'un clic
+ * depuis l'administration — le filtre est donc volontairement prudent.
+ */
 const PROFANITIES = [
-  "connard", "connasse", "putain", "merde", "salaud", "enfoiré",
-  "con", "bite", "cul", "chiant", "nul", "pourri", "débile",
-  "imbécile", "crétin", "idiot", "con de", "fils de pute",
+  "connard", "connards", "connasse", "connasses", "conard",
+  "enculé", "encule", "encules", "enfoire", "enfoires",
+  "salope", "salopes", "salaud", "salauds", "pute", "putes",
+  "putain", "putains", "ptain", "merde", "merdes", "merdique",
+  "bordel", "chiotte", "chiottes", "couille", "couilles",
+  "batard", "batards", "nique", "niquer", "ta gueule", "ferme ta gueule",
+  "fils de pute", "va te faire",
 ];
 
+/**
+ * Minuscules, accents retirés, tout ce qui n'est pas une lettre remplacé par une
+ * espace. Le passage en ASCII est indispensable : en JavaScript, `\b` ne considère
+ * pas les lettres accentuées comme des caractères de mot, donc « garçon » testé tel
+ * quel ouvrirait une frontière juste avant « con ».
+ */
+function normalizeForFilter(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z]+/g, " ")
+    .trim();
+}
+
 function containsProfanity(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/[^a-zàâäéèêëïîôöùûüœæ ]/g, " ");
-  return PROFANITIES.some((word) => new RegExp(`\\b${word}\\b`).test(normalized));
+  const normalized = ` ${normalizeForFilter(text)} `;
+  return PROFANITIES.some((word) =>
+    normalized.includes(` ${normalizeForFilter(word)} `),
+  );
 }
 
 function isSpam(author: string, comment: string): boolean {
-  const text = author + " " + comment;
+  const text = `${author} ${comment}`;
 
-  // Contient des vulgarités
+  // Contient une insulte ou une grossièreté.
   if (containsProfanity(text)) return true;
 
   const lowerText = text.toLowerCase();

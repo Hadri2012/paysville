@@ -30,17 +30,21 @@ export async function POST(request: Request) {
       throw errors.validation("Votre avis doit faire au moins 10 caractères.");
     }
 
-    await transaction((state) => {
+    const flagged = await transaction((state) => {
       const product = state.products.find((p) => p.id === productId);
       if (!product || !product.active || product.archived) {
         throw errors.validation("Produit introuvable.");
       }
-      createReview(state, { productId, author, rating, comment });
+      return createReview(state, { productId, author, rating, comment }).flagged;
     });
 
+    // Un avis retenu par le filtre n'est pas visible : le dire, plutôt que d'annoncer
+    // une publication que l'auteur ne retrouvera pas sur la fiche produit.
     return jsonOk({
-      pending: false,
-      message: "Merci ! Votre avis est maintenant publié.",
+      pending: flagged,
+      message: flagged
+        ? "Merci ! Votre avis sera visible après une vérification rapide."
+        : "Merci ! Votre avis est maintenant publié.",
     });
   });
 }

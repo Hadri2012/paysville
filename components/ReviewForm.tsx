@@ -1,9 +1,15 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-/** Formulaire de dépôt d'avis. L'avis part en modération : rien n'apparaît immédiatement. */
+/**
+ * Formulaire de dépôt d'avis. L'avis est publié immédiatement, sauf si le filtre
+ * automatique le retient — auquel cas le message le dit, puisque l'auteur ne le
+ * retrouverait pas dans la liste.
+ */
 export function ReviewForm({ productId }: { productId: string }) {
+  const router = useRouter();
   const [author, setAuthor] = useState("");
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
@@ -32,11 +38,13 @@ export function ReviewForm({ productId }: { productId: string }) {
       }
       setMessage({
         tone: "success",
-        text: data.message ?? "Merci ! Votre avis sera publié après vérification.",
+        text: data.message ?? "Merci ! Votre avis a bien été enregistré.",
       });
       setAuthor("");
       setComment("");
       setRating(5);
+      // Publié immédiatement : la liste au-dessus doit le montrer sans rechargement.
+      if (!data.pending) router.refresh();
     } catch {
       setMessage({
         tone: "error",
@@ -107,7 +115,8 @@ export function ReviewForm({ productId }: { productId: string }) {
         {busy ? "Envoi…" : "Publier mon avis"}
       </button>
       <p className="small muted" style={{ margin: 0 }}>
-        Les avis sont vérifiés avant publication.
+        Votre avis est publié immédiatement. Merci de rester correct : les propos
+        injurieux sont filtrés automatiquement.
       </p>
     </form>
   );
