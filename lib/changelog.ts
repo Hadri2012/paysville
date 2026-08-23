@@ -43,6 +43,18 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-23T20:12:00Z",
+    kind: "correctif",
+    title: "Trois bugs corrigés : panier, code promo, réservation de stock",
+    details:
+      "Un second audit a trouvé trois nouvelles anomalies, corrigées et verrouillées par de nouveaux tests automatiques.",
+    bullets: [
+      "Le panier n'était jamais vidé après un paiement réussi : les articles déjà achetés restaient affichés, prêts à être recommandés par erreur.",
+      "Un code promo à nombre d'utilisations limité restait consommé par une commande finalement annulée ou remboursée, au lieu de redevenir utilisable.",
+      "La réservation de stock pouvait expirer avant la session de paiement Stripe qui lui correspond, risquant une survente si le client payait dans cette fenêtre.",
+    ],
+  },
+  {
     at: "2026-08-23T19:47:00Z",
     kind: "correctif",
     title: "Quatre bugs corrigés : livraison, remboursement, adresse",
