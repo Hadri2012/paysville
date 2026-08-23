@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -106,6 +106,20 @@ function migrate(state: State): State {
       review.reply ??= null;
       review.helpfulYes ??= 0;
       review.helpfulNo ??= 0;
+    }
+  }
+
+  // v5 -> v6 : photos et signalements sur les avis, codes promo à usage unique par
+  // client. Là encore, l'état neutre pour ce qui existe déjà — en particulier
+  // `oncePerCustomer: false`, pour qu'un code en circulation continue de marcher
+  // exactement comme avant la mise à jour.
+  if (state.schemaVersion < 6) {
+    for (const review of state.reviews) {
+      review.photos ??= [];
+      review.reports ??= 0;
+    }
+    for (const promotion of state.promotions) {
+      promotion.oncePerCustomer ??= false;
     }
   }
 

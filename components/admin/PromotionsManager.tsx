@@ -16,6 +16,7 @@ export interface PromotionRow {
   minSubtotalCents: number | null;
   maxUses: number | null;
   uses: number;
+  oncePerCustomer: boolean;
   archived: boolean;
 }
 
@@ -28,6 +29,7 @@ interface Draft {
   endsAt: string;
   minSubtotal: string;
   maxUses: string;
+  oncePerCustomer: boolean;
   active: boolean;
 }
 
@@ -50,6 +52,7 @@ const EMPTY: Draft = {
   endsAt: "",
   minSubtotal: "",
   maxUses: "",
+  oncePerCustomer: false,
   active: true,
 };
 
@@ -86,6 +89,7 @@ export function PromotionsManager({
       endsAt: draft.endsAt,
       minSubtotal: draft.minSubtotal,
       maxUses: draft.maxUses,
+      oncePerCustomer: draft.oncePerCustomer,
       active: draft.active,
     };
 
@@ -244,6 +248,21 @@ export function PromotionsManager({
               <label className="checkbox" style={{ marginTop: 28 }}>
                 <input
                   type="checkbox"
+                  checked={draft.oncePerCustomer}
+                  onChange={(event) => update("oncePerCustomer", event.target.checked)}
+                />
+                <span>Une seule fois par client</span>
+              </label>
+              <span className="hint">
+                Vérifié sur l&apos;adresse e-mail de la commande. Indépendant du
+                nombre maximal ci-contre, qui compte toutes les personnes.
+              </span>
+            </div>
+
+            <div className="field">
+              <label className="checkbox" style={{ marginTop: 28 }}>
+                <input
+                  type="checkbox"
                   checked={draft.active}
                   onChange={(event) => update("active", event.target.checked)}
                 />
@@ -316,6 +335,9 @@ export function PromotionsManager({
                   <td className="num">
                     {promotion.uses}
                     {promotion.maxUses ? ` / ${promotion.maxUses}` : ""}
+                    {promotion.oncePerCustomer ? (
+                      <div className="small muted">1 / client</div>
+                    ) : null}
                   </td>
                   <td>
                     {promotion.archived ? (
@@ -348,6 +370,7 @@ export function PromotionsManager({
                                 : "",
                             maxUses:
                               promotion.maxUses !== null ? String(promotion.maxUses) : "",
+                            oncePerCustomer: promotion.oncePerCustomer,
                             active: promotion.active,
                           });
                           setFieldErrors({});

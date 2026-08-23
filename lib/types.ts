@@ -112,6 +112,12 @@ export interface Promotion {
   minSubtotalCents: number | null;
   maxUses: number | null;
   uses: number;
+  /**
+   * Un code par client : une adresse e-mail qui a déjà payé une commande avec ce
+   * code ne peut plus l'utiliser. Distinct de `maxUses`, qui borne le total toutes
+   * personnes confondues.
+   */
+  oncePerCustomer: boolean;
   archived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -125,6 +131,15 @@ export interface ReviewReply {
 
 /** Longueur maximale d'une réponse de la boutique (partagée avec le formulaire admin). */
 export const MAX_REPLY_LENGTH = 800;
+
+/**
+ * Photos jointes à un avis. Elles sont stockées en data-URI dans le document JSON
+ * de la boutique, donc bornées serré : le navigateur redimensionne avant l'envoi et
+ * le serveur refuse ce qui dépasse. Sans cela, quelques dizaines d'avis illustrés
+ * suffiraient à alourdir chaque lecture de la base.
+ */
+export const MAX_REVIEW_PHOTOS = 2;
+export const MAX_REVIEW_PHOTO_BYTES = 320_000;
 
 /**
  * Avis client sur un produit. Publié immédiatement, mais signalé automatiquement
@@ -149,6 +164,13 @@ export interface Review {
   /** Votes « cet avis m'a été utile » / « pas utile ». */
   helpfulYes: number;
   helpfulNo: number;
+  /** Photos jointes par l'auteur, en data-URI. */
+  photos: string[];
+  /**
+   * Signalements déposés par des visiteurs. Ne masque rien tout seul : c'est une
+   * file de lecture pour la boutique, qui décide seule de marquer ou de supprimer.
+   */
+  reports: number;
   createdAt: string;
 }
 

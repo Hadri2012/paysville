@@ -189,6 +189,10 @@ export function upsertPromotion(
 
   const now = new Date().toISOString();
   const active = body.active !== undefined ? toBoolean(body.active) : (existing?.active ?? true);
+  const oncePerCustomer =
+    body.oncePerCustomer !== undefined
+      ? toBoolean(body.oncePerCustomer)
+      : (existing?.oncePerCustomer ?? false);
 
   if (existing) {
     existing.code = code;
@@ -198,6 +202,7 @@ export function upsertPromotion(
     existing.endsAt = endsAt;
     existing.minSubtotalCents = minSubtotalCents;
     existing.maxUses = maxUses;
+    existing.oncePerCustomer = oncePerCustomer;
     existing.active = active;
     existing.updatedAt = now;
     return existing;
@@ -214,6 +219,7 @@ export function upsertPromotion(
     minSubtotalCents,
     maxUses,
     uses: 0,
+    oncePerCustomer,
     archived: false,
     createdAt: now,
     updatedAt: now,

@@ -45,6 +45,21 @@ export function ReviewList({
 
           <p className="review-body">{review.comment}</p>
 
+          {review.photos.length > 0 ? (
+            <ul className="review-photos">
+              {review.photos.map((photo, index) => (
+                <li key={photo.slice(-24) + index}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo}
+                    alt={`Photo jointe par ${review.author}`}
+                    loading="lazy"
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
           {review.reply ? (
             <div className="review-reply">
               <div className="small">

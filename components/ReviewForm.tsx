@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ReviewPhotoPicker } from "./ReviewPhotoPicker";
 
 /**
  * Formulaire de dépôt d'avis. L'avis est publié immédiatement, sauf si le filtre
@@ -17,6 +18,7 @@ export function ReviewForm({ productId }: { productId: string }) {
   const [email, setEmail] = useState("");
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [photos, setPhotos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(
     null,
@@ -30,7 +32,7 @@ export function ReviewForm({ productId }: { productId: string }) {
       const response = await fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, author, email, rating, comment }),
+        body: JSON.stringify({ productId, author, email, rating, comment, photos }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -47,6 +49,7 @@ export function ReviewForm({ productId }: { productId: string }) {
       setAuthor("");
       setEmail("");
       setComment("");
+      setPhotos([]);
       setRating(5);
       // Publié immédiatement : la liste au-dessus doit le montrer sans rechargement.
       if (!data.pending) router.refresh();
@@ -133,6 +136,8 @@ export function ReviewForm({ productId }: { productId: string }) {
         />
         <span className="hint">Au moins 10 caractères.</span>
       </div>
+
+      <ReviewPhotoPicker photos={photos} onChange={setPhotos} disabled={busy} />
 
       <button type="submit" className="btn btn-primary" disabled={busy}>
         {busy ? "Envoi…" : "Publier mon avis"}

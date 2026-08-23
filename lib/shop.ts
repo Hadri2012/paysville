@@ -67,6 +67,15 @@ export function availableStock(state: State, product: Product): number {
 /* Catalogue public                                                           */
 /* -------------------------------------------------------------------------- */
 
+/** Au-delà, un produit n'est plus une nouveauté. */
+export const NEW_PRODUCT_DAYS = 30;
+
+export function isNewProduct(product: Product, now = Date.now()): boolean {
+  const created = Date.parse(product.createdAt);
+  if (Number.isNaN(created)) return false;
+  return now - created <= NEW_PRODUCT_DAYS * 24 * 60 * 60_000;
+}
+
 export interface PublicProduct {
   id: string;
   sku: string;
@@ -78,6 +87,9 @@ export interface PublicProduct {
   category: string;
   available: number;
   inStock: boolean;
+  /** Ajouté au catalogue il y a moins de 30 jours. */
+  isNew: boolean;
+  createdAt: string;
 }
 
 export function toPublicProduct(state: State, product: Product): PublicProduct {
@@ -93,6 +105,8 @@ export function toPublicProduct(state: State, product: Product): PublicProduct {
     category: product.category,
     available,
     inStock: available > 0,
+    isNew: isNewProduct(product),
+    createdAt: product.createdAt,
   };
 }
 
@@ -109,6 +123,8 @@ export function listPublicProducts(state: State): PublicProduct[] {
 
 export const SORT_OPTIONS = {
   pertinence: "Pertinence",
+  ventes: "Meilleures ventes",
+  nouveautes: "Nouveautés",
   "prix-croissant": "Prix croissant",
   "prix-decroissant": "Prix décroissant",
   nom: "Nom (A → Z)",
@@ -119,6 +135,26 @@ export type SortKey = keyof typeof SORT_OPTIONS;
 
 export function isSortKey(value: unknown): value is SortKey {
   return typeof value === "string" && value in SORT_OPTIONS;
+}
+
+/**
+ * Quantités réellement vendues, par produit.
+ *
+ * Seules les commandes payées comptent, et les annulées ou remboursées en sont
+ * exclues : une commande abandonnée au paiement, ou remboursée le lendemain, ne
+ * dit rien de ce qui se vend. On additionne les quantités plutôt que le nombre de
+ * commandes — vendre six exemplaires en une fois reste une vente de six.
+ */
+export function salesCounts(state: State): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const order of state.orders) {
+    if (order.paymentStatus !== "paid") continue;
+    if (order.status === "canceled" || order.status === "refunded") continue;
+    for (const item of order.items) {
+      counts.set(item.productId, (counts.get(item.productId) ?? 0) + item.quantity);
+    }
+  }
+  return counts;
 }
 
 /**
@@ -142,10 +178,16 @@ export function searchProducts(products: PublicProduct[], query: string): Public
  * quel que soit le critère demandé, mettre en tête un article qu'on ne peut pas
  * acheter n'aide personne.
  */
+/** Données annexes dont dépendent certains tris, calculées une fois par page. */
+export interface SortContext {
+  ratings?: Map<string, { average: number | null; count: number }>;
+  sales?: Map<string, number>;
+}
+
 export function sortProducts(
   products: PublicProduct[],
   sort: SortKey,
-  ratings?: Map<string, { average: number | null; count: number }>,
+  context: SortContext = {},
 ): PublicProduct[] {
   const byName = (a: PublicProduct, b: PublicProduct) => a.name.localeCompare(b.name, "fr");
   // « Pertinence » = l'ordre d'entrée, c'est-à-dire le classement défini par
@@ -157,12 +199,17 @@ export function sortProducts(
 
   const compare: Record<SortKey, (a: PublicProduct, b: PublicProduct) => number> = {
     pertinence: byRank,
+    // Jamais vendu vaut zéro, pas « inconnu » : sur une boutique neuve tous les
+    // produits sont à égalité et l'ordre de l'administrateur reprend la main.
+    ventes: (a, b) =>
+      (context.sales?.get(b.id) ?? 0) - (context.sales?.get(a.id) ?? 0) || byRank(a, b),
+    nouveautes: (a, b) => b.createdAt.localeCompare(a.createdAt) || byRank(a, b),
     "prix-croissant": (a, b) => a.priceCents - b.priceCents || byName(a, b),
     "prix-decroissant": (a, b) => b.priceCents - a.priceCents || byName(a, b),
     nom: byName,
     note: (a, b) => {
-      const scoreA = ratings?.get(a.id)?.average ?? -1;
-      const scoreB = ratings?.get(b.id)?.average ?? -1;
+      const scoreA = context.ratings?.get(a.id)?.average ?? -1;
+      const scoreB = context.ratings?.get(b.id)?.average ?? -1;
       return scoreB - scoreA || byRank(a, b);
     },
   };
@@ -198,14 +245,40 @@ export interface PromotionResult {
 }
 
 /**
+ * Ce client a-t-il déjà payé une commande avec ce code ?
+ *
+ * On ne regarde que les commandes réellement payées et non annulées : un panier
+ * abandonné au paiement ne doit pas brûler le code, et une commande remboursée
+ * rend son droit au client.
+ */
+function hasUsedPromotion(state: State, promotionId: string, email: string): boolean {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return false;
+  return state.orders.some(
+    (order) =>
+      order.promotionId === promotionId &&
+      order.paymentStatus === "paid" &&
+      order.status !== "canceled" &&
+      order.status !== "refunded" &&
+      order.customer.email.trim().toLowerCase() === needle,
+  );
+}
+
+/**
  * Valide un code promo côté serveur : existence, activation, dates, minimum
  * d'achat et nombre d'utilisations. Le navigateur ne décide jamais de la remise.
+ *
+ * `customerEmail` n'est connu qu'au moment de la commande : c'est là que se vérifie
+ * un code réservé à un usage par client. Le panier, lui, l'affiche sans pouvoir le
+ * contrôler — d'où la mention portée par le devis, pour prévenir avant le paiement
+ * plutôt que de refuser après.
  */
 export function evaluatePromotion(
   state: State,
   code: string,
   subtotalCents: number,
   now = Date.now(),
+  customerEmail?: string | null,
 ): PromotionResult {
   const promotion = findPromotion(state, code);
   if (!promotion || promotion.archived) {
@@ -222,6 +295,15 @@ export function evaluatePromotion(
   }
   if (promotion.maxUses !== null && promotion.uses >= promotion.maxUses) {
     throw errors.invalidPromo("Ce code promotionnel a atteint sa limite d'utilisation.");
+  }
+  if (
+    promotion.oncePerCustomer &&
+    customerEmail &&
+    hasUsedPromotion(state, promotion.id, customerEmail)
+  ) {
+    throw errors.invalidPromo(
+      "Ce code est réservé à une utilisation par client, et vous l'avez déjà utilisé.",
+    );
   }
   if (promotion.minSubtotalCents !== null && subtotalCents < promotion.minSubtotalCents) {
     throw errors.invalidPromo(
@@ -350,6 +432,8 @@ export interface Quote {
   promoCode: string | null;
   promotionId: string | null;
   promoError: string | null;
+  /** Code valable une fois par client : à signaler tant que l'e-mail est inconnu. */
+  promoOncePerCustomer: boolean;
   shippingCents: number;
   shippingCovered: boolean | null;
   shippingMessage: string | null;
@@ -360,6 +444,8 @@ export interface Quote {
 export interface QuoteInput {
   items: CartLineInput[];
   promoCode?: string | null;
+  /** Connu seulement à la commande : sans lui, un code « une fois par client » passe. */
+  customerEmail?: string | null;
   postalCode?: string | null;
   city?: string | null;
   /** true = commande réelle : la moindre anomalie déclenche une erreur. */
@@ -438,13 +524,24 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
   let promoCode: string | null = null;
   let promotionId: string | null = null;
   let promoError: string | null = null;
+  let promoOncePerCustomer = false;
   const requestedCode = (input.promoCode ?? "").trim();
   if (requestedCode && subtotalCents > 0) {
     try {
-      const result = evaluatePromotion(state, requestedCode, subtotalCents, now);
+      const result = evaluatePromotion(
+        state,
+        requestedCode,
+        subtotalCents,
+        now,
+        input.customerEmail,
+      );
       discountCents = result.discountCents;
       promoCode = result.promotion.code;
       promotionId = result.promotion.id;
+      // La mention n'a d'intérêt que tant que la règle n'a pas pu être vérifiée :
+      // une fois l'e-mail connu, le code est accepté ou refusé, il n'y a plus de
+      // réserve à formuler.
+      promoOncePerCustomer = result.promotion.oncePerCustomer && !input.customerEmail;
     } catch (error) {
       if (strict) throw error;
       promoError = error instanceof Error ? error.message : "Code promotionnel invalide.";
@@ -476,6 +573,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
     promoCode,
     promotionId,
     promoError,
+    promoOncePerCustomer,
     shippingCents,
     shippingCovered,
     shippingMessage,

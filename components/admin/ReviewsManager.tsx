@@ -18,6 +18,8 @@ export interface AdminReviewRow {
   reply: { text: string; at: string } | null;
   helpfulYes: number;
   helpfulNo: number;
+  photos: string[];
+  reports: number;
   createdAt: string;
 }
 
@@ -142,6 +144,14 @@ export function ReviewsManager({ reviews }: { reviews: AdminReviewRow[] }) {
   const setReply = (id: string, reply: string) =>
     run(id, () => apiCall(`/api/admin/reviews/${id}`, "PATCH", { reply }));
 
+  const clearReports = (id: string) =>
+    run(id, () => apiCall(`/api/admin/reviews/${id}`, "PATCH", { clearReports: true }));
+
+  const removePhotos = (id: string) => {
+    if (!window.confirm("Retirer les photos de cet avis ? Le texte est conservé.")) return;
+    return run(id, () => apiCall(`/api/admin/reviews/${id}`, "PATCH", { removePhotos: true }));
+  };
+
   const remove = (id: string, author: string) => {
     if (
       !window.confirm(
@@ -182,6 +192,11 @@ export function ReviewsManager({ reviews }: { reviews: AdminReviewRow[] }) {
               </div>
             </div>
             <div className="btn-row">
+              {review.reports > 0 ? (
+                <span className="badge badge-danger">
+                  {review.reports} signalement{review.reports > 1 ? "s" : ""}
+                </span>
+              ) : null}
               {review.verified ? (
                 <span className="badge badge-info">✓ Achat vérifié</span>
               ) : null}
@@ -192,6 +207,17 @@ export function ReviewsManager({ reviews }: { reviews: AdminReviewRow[] }) {
           </div>
 
           <p style={{ whiteSpace: "pre-wrap", margin: "10px 0" }}>{review.comment}</p>
+
+          {review.photos.length > 0 ? (
+            <ul className="review-photos">
+              {review.photos.map((photo, index) => (
+                <li key={photo.slice(-24) + index}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photo} alt={`Photo ${index + 1} de ${review.author}`} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           <div className="btn-row">
             {review.flagged ? (
@@ -213,6 +239,26 @@ export function ReviewsManager({ reviews }: { reviews: AdminReviewRow[] }) {
                 Marquer comme spam
               </button>
             )}
+            {review.reports > 0 ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={busy === review.id}
+                onClick={() => clearReports(review.id)}
+              >
+                Signalements traités
+              </button>
+            ) : null}
+            {review.photos.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-icon-danger"
+                disabled={busy === review.id}
+                onClick={() => removePhotos(review.id)}
+              >
+                Retirer les photos
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost btn-sm btn-icon-danger"

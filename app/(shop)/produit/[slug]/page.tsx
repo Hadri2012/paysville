@@ -5,10 +5,16 @@ import { FavoriteButton } from "@/components/FavoriteButton";
 import { ProductPurchase } from "@/components/ProductPurchase";
 import { ReviewForm } from "@/components/ReviewForm";
 import { ReviewList } from "@/components/ReviewList";
+import { ReviewThemes } from "@/components/ReviewThemes";
 import { RatingSummary } from "@/components/Stars";
 import { suggestionsFor } from "@/lib/aiRecommendations";
 import { formatPrice } from "@/lib/money";
-import { approvedReviews, publicReviewView, summarize } from "@/lib/reviews";
+import {
+  approvedReviews,
+  frequentThemes,
+  publicReviewView,
+  summarize,
+} from "@/lib/reviews";
 import { findProductByHandle, toPublicProduct } from "@/lib/shop";
 import { readState } from "@/lib/store";
 
@@ -38,6 +44,9 @@ export default async function ProductPage({ params }: Props) {
   const product = toPublicProduct(state, found);
   const reviews = approvedReviews(state, product.id);
   const rating = summarize(reviews);
+  // Le nom du produit est écarté : il revient dans presque tous les avis et ne
+  // distinguerait rien.
+  const themes = frequentThemes(reviews, `${product.name} ${product.category}`);
   const suggestions = await suggestionsFor(state, product);
 
   return (
@@ -150,6 +159,8 @@ export default async function ProductPage({ params }: Props) {
               <RatingSummary average={rating.average} count={rating.count} />
             </div>
           </div>
+
+          <ReviewThemes themes={themes} total={reviews.length} />
 
           <div className="review-layout">
             <div>

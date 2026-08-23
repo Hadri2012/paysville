@@ -1028,6 +1028,34 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
   background: var(--brand);
 }
 
+/* « Complétez votre panier » */
+.cart-suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+.cart-suggestion {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.cart-suggestion-media {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.cart-suggestion-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cart-suggestion-body { display: grid; gap: 6px; min-width: 0; }
+.cart-suggestion-body > a { font-weight: 600; }
+.cart-suggestion-body .product-price { margin: 0; }
+
 /* Progression visuelle d'une commande (page de suivi) */
 .order-timeline { list-style: none; margin: 0; padding: 0; }
 .order-step {
@@ -1231,7 +1259,7 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
 }
 .review-reply .review-body { margin-top: 4px; font-size: 0.93rem; }
 
-/* Votes d'utilité */
+/* Votes d'utilité et signalement */
 .review-votes {
   display: flex;
   align-items: center;
@@ -1241,7 +1269,96 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
   padding-top: 10px;
   border-top: 1px solid var(--line);
 }
-.review-vote-buttons { display: inline-flex; gap: 6px; }
+.review-vote-buttons { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* Le signalement reste discret : c'est un recours, pas une action courante. */
+.review-report { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
+.review-report:hover:not(:disabled) { color: var(--danger); }
+
+/* Photos jointes à un avis */
+.review-photos {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.review-photos li { margin: 0; }
+.review-photos img {
+  width: 104px;
+  height: 104px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  display: block;
+}
+
+/* Sélection des photos dans le formulaire */
+.review-photo-picks {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.review-photo-picks li { display: grid; gap: 2px; justify-items: center; margin: 0; }
+.review-photo-picks img {
+  width: 76px;
+  height: 76px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  display: block;
+}
+
+/* Points le plus souvent cités */
+.review-themes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.review-themes ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+.review-themes li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 0.86rem;
+  margin: 0;
+}
+.review-theme-word::first-letter { text-transform: uppercase; }
+.review-theme-count {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Intitulé de champ sans contrôle associé (groupe de boutons, aperçus). */
+.label-like {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
 
 /* Sélecteur d'étoiles du formulaire */
 .rating-picker { border: 0; padding: 0; margin: 0; }

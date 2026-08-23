@@ -12,29 +12,28 @@ import { useEffect, useState } from "react";
  */
 
 const STORAGE_KEY = "hadrishop.reviewVotes.v1";
+const REPORTED_KEY = "hadrishop.reviewReports.v1";
 
-type Ballot = Record<string, "yes" | "no">;
-
-function readBallots(): Ballot {
+function readMap<T>(key: string): Record<string, T> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return parsed as Ballot;
+    return parsed as Record<string, T>;
   } catch {
     return {};
   }
 }
 
-function remember(reviewId: string, choice: "yes" | "no"): void {
+function remember<T>(key: string, reviewId: string, value: T): void {
   try {
-    const ballots = readBallots();
-    ballots[reviewId] = choice;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(ballots));
+    const stored = readMap<T>(key);
+    stored[reviewId] = value;
+    window.localStorage.setItem(key, JSON.stringify(stored));
   } catch {
-    /* navigation privée ou stockage plein : le vote compte quand même côté serveur */
+    /* navigation privée ou stockage plein : l'action compte quand même côté serveur */
   }
 }
 
@@ -49,14 +48,41 @@ export function ReviewVotes({
 }) {
   const [counts, setCounts] = useState({ yes: helpfulYes, no: helpfulNo });
   const [voted, setVoted] = useState<"yes" | "no" | null>(null);
+  const [reported, setReported] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     // `localStorage` n'existe pas au rendu serveur : lire avant le montage
     // produirait un rendu client différent (erreur d'hydratation React).
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation avec un stockage externe
-    setVoted(readBallots()[reviewId] ?? null);
+    setVoted(readMap<"yes" | "no">(STORAGE_KEY)[reviewId] ?? null);
+    setReported(Boolean(readMap<boolean>(REPORTED_KEY)[reviewId]));
   }, [reviewId]);
+
+  const report = async () => {
+    if (reported || busy) return;
+    if (
+      !window.confirm(
+        "Signaler cet avis à la boutique ? Elle le relira et décidera de la suite.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setReported(true);
+    remember(REPORTED_KEY, reviewId, true);
+    try {
+      await fetch(`/api/reviews/${reviewId}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+    } catch {
+      /* le signalement est un geste ponctuel : pas de reprise automatique */
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const vote = async (choice: "yes" | "no") => {
     if (voted || busy) return;
@@ -67,7 +93,7 @@ export function ReviewVotes({
       yes: current.yes + (choice === "yes" ? 1 : 0),
       no: current.no + (choice === "no" ? 1 : 0),
     }));
-    remember(reviewId, choice);
+    remember(STORAGE_KEY, reviewId, choice);
     try {
       const response = await fetch(`/api/reviews/${reviewId}/vote`, {
         method: "POST",
@@ -98,30 +124,48 @@ export function ReviewVotes({
         <span className="small muted">Cet avis vous a-t-il été utile ?</span>
       )}
 
-      {voted ? (
-        <span className="small muted">
-          {voted === "yes" ? "Merci, votre vote est pris en compte." : "Merci pour votre retour."}
-        </span>
-      ) : (
-        <span className="review-vote-buttons">
+      <span className="review-vote-buttons">
+        {voted ? (
+          <span className="small muted">
+            {voted === "yes"
+              ? "Merci, votre vote est pris en compte."
+              : "Merci pour votre retour."}
+          </span>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={() => vote("yes")}
+            >
+              👍 Utile
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={() => vote("no")}
+            >
+              👎 Pas utile
+            </button>
+          </>
+        )}
+
+        {reported ? (
+          <span className="small muted">Avis signalé à la boutique.</span>
+        ) : (
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-ghost btn-sm review-report"
             disabled={busy}
-            onClick={() => vote("yes")}
+            onClick={() => void report()}
+            title="Signaler un avis inapproprié"
           >
-            👍 Utile
+            Signaler
           </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={busy}
-            onClick={() => vote("no")}
-          >
-            👎 Pas utile
-          </button>
-        </span>
-      )}
+        )}
+      </span>
     </div>
   );
 }

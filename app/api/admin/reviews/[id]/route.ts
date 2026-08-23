@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
-import { setReviewReply } from "@/lib/reviews";
+import { clearReviewReports, setReviewReply } from "@/lib/reviews";
 import { transaction } from "@/lib/store";
 import { MAX_REPLY_LENGTH } from "@/lib/types";
 import { cleanString, toBoolean } from "@/lib/validation";
@@ -11,10 +11,13 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
 
 /**
- * Modification d'un avis par la boutique. Deux champs, indépendants l'un de l'autre :
+ * Modification d'un avis par la boutique. Quatre champs, indépendants les uns des
+ * autres :
  *
  *  - `flagged` : marque ou démarque l'avis comme spam ;
- *  - `reply` : réponse publique affichée sous l'avis (chaîne vide = la retirer).
+ *  - `reply` : réponse publique affichée sous l'avis (chaîne vide = la retirer) ;
+ *  - `clearReports` : les signalements ont été examinés, rien à retenir ;
+ *  - `removePhotos` : retire les photos jointes en gardant le texte de l'avis.
  *
  * Seul ce qui est présent dans le corps est modifié, pour qu'enregistrer une réponse
  * ne remette pas au passage un avis marqué comme spam en ligne.
@@ -33,6 +36,9 @@ export async function PATCH(request: Request, context: Context) {
       if ("reply" in body) {
         setReviewReply(found, cleanString(body.reply, MAX_REPLY_LENGTH));
       }
+      if (toBoolean(body.clearReports)) clearReviewReports(found);
+      // Retirer une photo déplacée sans supprimer un avis par ailleurs honnête.
+      if (toBoolean(body.removePhotos)) found.photos = [];
       return found;
     });
 

@@ -1,6 +1,6 @@
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, limit, readJson } from "@/lib/http";
-import { createReview } from "@/lib/reviews";
+import { createReview, sanitizeReviewPhotos } from "@/lib/reviews";
 import { transaction } from "@/lib/store";
 import { cleanString, toInt } from "@/lib/validation";
 
@@ -27,6 +27,9 @@ export async function POST(request: Request) {
     // Facultatif : sert uniquement à décider du badge « achat vérifié », et n'est
     // pas enregistré avec l'avis.
     const email = cleanString(body.email, 160).toLowerCase();
+    // Le navigateur redimensionne avant l'envoi ; `sanitizeReviewPhotos` écarte
+    // quand même tout ce qui n'est pas une image matricielle de taille raisonnable.
+    const photos = sanitizeReviewPhotos(body.photos);
 
     if (!author) throw errors.validation("Indiquez le nom à afficher avec votre avis.");
     if (rating === null || rating < 1 || rating > 5) {
@@ -41,7 +44,14 @@ export async function POST(request: Request) {
       if (!product || !product.active || product.archived) {
         throw errors.validation("Produit introuvable.");
       }
-      const created = createReview(state, { productId, author, rating, comment, email });
+      const created = createReview(state, {
+        productId,
+        author,
+        rating,
+        comment,
+        email,
+        photos,
+      });
       return { flagged: created.flagged, verified: created.verified };
     });
 

@@ -6,6 +6,7 @@ import {
   SORT_OPTIONS,
   isSortKey,
   listPublicProducts,
+  salesCounts,
   searchProducts,
   sortProducts,
   type SortKey,
@@ -46,6 +47,7 @@ export default async function ShopPage({
   const state = await readState();
   const all = listPublicProducts(state);
   const ratings = reviewSummaries(state);
+  const sales = salesCounts(state);
 
   const categories = [...new Set(all.map((p) => p.category).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, "fr"),
@@ -58,7 +60,7 @@ export default async function ShopPage({
   const active = { q: query, categorie: selected ?? undefined, tri: sort };
 
   const filtered = selected ? all.filter((p) => p.category === selected) : all;
-  const visible = sortProducts(searchProducts(filtered, query), sort, ratings);
+  const visible = sortProducts(searchProducts(filtered, query), sort, { ratings, sales });
 
   const hasFilters = Boolean(query || selected || sort !== "pertinence");
 

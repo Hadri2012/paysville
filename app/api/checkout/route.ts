@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     buildQuote(await readState(), {
       items,
       promoCode,
+      customerEmail: identity.customer.email,
       postalCode: identity.address.postalCode,
       city: identity.address.city,
       strict: true,
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
       const quote = buildQuote(state, {
         items,
         promoCode,
+        customerEmail: identity.customer.email,
         postalCode: identity.address.postalCode,
         city: identity.address.city,
         strict: true,

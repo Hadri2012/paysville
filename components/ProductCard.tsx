@@ -30,12 +30,17 @@ export function ProductCard({
           width={600}
           height={600}
         />
+        {/* Un seul état à la fois sur la vignette : la rupture prime sur le stock
+            bas, qui prime sur la nouveauté — l'information la plus décisive pour
+            l'achat passe devant. */}
         {!product.inStock ? (
           <span className="badge badge-danger">Rupture de stock</span>
         ) : low ? (
           <span className="badge badge-warning">
             Plus que {product.available} en stock
           </span>
+        ) : product.isNew ? (
+          <span className="badge badge-info">Nouveau</span>
         ) : null}
         <FavoriteButton productId={product.id} name={product.name} />
       </div>

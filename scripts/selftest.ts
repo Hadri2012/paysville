@@ -6,15 +6,28 @@
  */
 import { newId } from "../lib/ids";
 import { confirmOrderPayment, createPendingOrder } from "../lib/orders";
+import { cartSuggestions } from "../lib/recommendations";
 import {
   approvedReviews,
+  clearReviewReports,
   createReview,
+  frequentThemes,
   isVerifiedPurchase,
+  reportReview,
+  sanitizeReviewPhotos,
   setReviewReply,
   voteReviewHelpful,
 } from "../lib/reviews";
-import { buildQuote, availableStock, sweepReservations } from "../lib/shop";
+import {
+  availableStock,
+  buildQuote,
+  listPublicProducts,
+  salesCounts,
+  sortProducts,
+  sweepReservations,
+} from "../lib/shop";
 import { readState, transaction } from "../lib/store";
+import { MAX_REVIEW_PHOTOS } from "../lib/types";
 import type { CheckoutIdentity } from "../lib/validation";
 
 let failures = 0;
@@ -141,6 +154,7 @@ async function main() {
       minSubtotalCents: null,
       maxUses: 1,
       uses: 0,
+      oncePerCustomer: false,
       archived: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -156,6 +170,7 @@ async function main() {
       minSubtotalCents: null,
       maxUses: null,
       uses: 0,
+      oncePerCustomer: false,
       archived: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -369,6 +384,182 @@ async function main() {
   check(
     "avis spam absent de la liste publique",
     publicList.length === 2 && !publicList.some((r) => r.id === spam.id),
+  );
+
+  console.log("\n== Photos et signalements d'avis ==");
+  // Le serveur ne fait confiance à rien de ce que le navigateur envoie.
+  const jpeg = `data:image/jpeg;base64,${"A".repeat(400)}`;
+  check(
+    "photo JPEG acceptée",
+    sanitizeReviewPhotos([jpeg]).length === 1,
+  );
+  check(
+    "SVG refusé (peut porter du script)",
+    sanitizeReviewPhotos(["data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="]).length === 0,
+  );
+  check(
+    "URL distante refusée",
+    sanitizeReviewPhotos(["https://exemple.test/photo.jpg"]).length === 0,
+  );
+  check(
+    "photo trop lourde refusée",
+    sanitizeReviewPhotos([`data:image/jpeg;base64,${"A".repeat(400_000)}`]).length === 0,
+  );
+  check(
+    `pas plus de ${MAX_REVIEW_PHOTOS} photos`,
+    sanitizeReviewPhotos([jpeg, jpeg, jpeg, jpeg]).length === MAX_REVIEW_PHOTOS,
+  );
+  check("valeur non tableau ignorée", sanitizeReviewPhotos("pas un tableau").length === 0);
+
+  await transaction((state) => {
+    const review = state.reviews.find((r) => r.id === verified.id)!;
+    reportReview(review);
+    reportReview(review);
+  });
+  const flaggedByVisitors = (await readState()).reviews.find((r) => r.id === verified.id)!;
+  check("signalements comptés", flaggedByVisitors.reports === 2);
+  check(
+    "un signalement ne masque pas l'avis",
+    !flaggedByVisitors.flagged &&
+      approvedReviews(await readState(), p4.id).some((r) => r.id === verified.id),
+  );
+  await transaction((state) =>
+    clearReviewReports(state.reviews.find((r) => r.id === verified.id)!),
+  );
+  check(
+    "signalements remis à zéro",
+    (await readState()).reviews.find((r) => r.id === verified.id)!.reports === 0,
+  );
+
+  console.log("\n== Points le plus souvent cités ==");
+  const themeProduct = (await readState()).products.find((p) => p.sku === "P6")!;
+  await transaction((state) => {
+    const comments = [
+      "Finition impeccable et objet très solide, je recommande.",
+      "La finition est nette, livraison rapide en prime.",
+      "Solide, bien fini. Livraison rapide elle aussi.",
+      "Un peu petit à mon goût mais la finition reste correcte.",
+    ];
+    for (const [index, comment] of comments.entries()) {
+      createReview(state, {
+        productId: themeProduct.id,
+        author: `Client ${index + 1}`,
+        rating: 4,
+        comment,
+      });
+    }
+  });
+  const themeReviews = approvedReviews(await readState(), themeProduct.id);
+  const themes = frequentThemes(themeReviews, themeProduct.name);
+  const labels = themes.map((t) => t.label);
+  check("« finition » ressort des 4 avis", labels.includes("finition"), labels.join(", "));
+  check("singulier et pluriel regroupés", labels.includes("solide"), labels.join(", "));
+  check(
+    "un mot cité une seule fois est écarté",
+    !labels.includes("petit"),
+    labels.join(", "),
+  );
+  check(
+    "compte des avis distincts, pas des occurrences",
+    themes.find((t) => t.label === "finition")?.reviews === 3,
+    JSON.stringify(themes),
+  );
+  check("aucun mot vide dans le résumé", !labels.some((l) => ["très", "tres", "mais"].includes(l)));
+  check(
+    "résumé muet en dessous de 3 avis",
+    frequentThemes(themeReviews.slice(0, 2), "").length === 0,
+  );
+
+  console.log("\n== Ventes, nouveautés et suggestions de panier ==");
+  const state6 = await readState();
+  const sales = salesCounts(state6);
+  // orderA : 2 exemplaires de P4, payée. orderB : P5, annulée faute de paiement.
+  check("quantités payées comptées", sales.get(p4.id) === 2, `${sales.get(p4.id)}`);
+  check("commande annulée non comptée", (sales.get(p5.id) ?? 0) === 0);
+  const bestSellers = sortProducts(listPublicProducts(state6), "ventes", { sales });
+  check(
+    "le produit vendu passe devant les invendus en stock",
+    bestSellers.filter((p) => p.inStock)[0]?.id === p4.id ||
+      // P4 est en rupture après la vente : il passe alors en fin de liste, ce qui
+      // reste la règle générale du tri.
+      !bestSellers.find((p) => p.id === p4.id)?.inStock,
+  );
+
+  const fresh = await transaction((state) => {
+    const product = state.products.find((p) => p.sku === "P6")!;
+    product.createdAt = new Date().toISOString();
+    const old = state.products.find((p) => p.sku === "P7")!;
+    old.createdAt = new Date(Date.now() - 120 * 86_400_000).toISOString();
+    return { newId: product.id, oldId: old.id };
+  });
+  const state7 = await readState();
+  const catalogue = listPublicProducts(state7);
+  check(
+    "produit récent marqué comme nouveauté",
+    catalogue.find((p) => p.id === fresh.newId)?.isNew === true,
+  );
+  check(
+    "produit ancien non marqué",
+    catalogue.find((p) => p.id === fresh.oldId)?.isNew === false,
+  );
+
+  const suggested = cartSuggestions(state7, [p4.id]);
+  check(
+    "suggestions hors panier et en stock",
+    suggested.length > 0 &&
+      suggested.every((p) => p.id !== p4.id && p.inStock),
+    `${suggested.length}`,
+  );
+  check("panier vide : aucune suggestion", cartSuggestions(state7, []).length === 0);
+
+  console.log("\n== Code promo une fois par client ==");
+  const oncePromoId = await transaction((state) => {
+    const promotion = state.promotions.find((p) => p.id === promoId)!;
+    promotion.oncePerCustomer = true;
+    promotion.maxUses = null;
+    return promotion.id;
+  });
+  const state8 = await readState();
+  // orderA a été payée par identity.customer.email, mais sans ce code.
+  check(
+    "code accepté pour un client qui ne l'a jamais utilisé",
+    buildQuote(state8, {
+      items: [{ productId: p2.id, quantity: 2 }],
+      promoCode: "TEST10",
+      customerEmail: buyerEmail,
+    }).discountCents === 60,
+  );
+  await transaction((state) => {
+    const order = state.orders.find((o) => o.id === orderA.id)!;
+    order.promotionId = oncePromoId;
+  });
+  const state9 = await readState();
+  expectThrows(
+    "code refusé au même client la seconde fois",
+    () =>
+      buildQuote(state9, {
+        items: [{ productId: p2.id, quantity: 2 }],
+        promoCode: "TEST10",
+        customerEmail: buyerEmail,
+        strict: true,
+      }),
+    "invalid_promo",
+  );
+  check(
+    "code accepté pour une autre adresse",
+    buildQuote(state9, {
+      items: [{ productId: p2.id, quantity: 2 }],
+      promoCode: "TEST10",
+      customerEmail: "quelquun.dautre@example.org",
+    }).discountCents === 60,
+  );
+  const anonymousQuote = buildQuote(state9, {
+    items: [{ productId: p2.id, quantity: 2 }],
+    promoCode: "TEST10",
+  });
+  check(
+    "panier sans e-mail : code appliqué mais signalé",
+    anonymousQuote.discountCents === 60 && anonymousQuote.promoOncePerCustomer,
   );
 
   console.log(

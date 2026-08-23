@@ -33,6 +33,8 @@ export function defaultPromotion(): Promotion {
     minSubtotalCents: null,
     maxUses: null,
     uses: 0,
+    // Code de bienvenue : une remise par client, pas une remise permanente.
+    oncePerCustomer: true,
     archived: false,
     createdAt: now,
     updatedAt: now,

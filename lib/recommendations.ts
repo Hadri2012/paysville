@@ -85,3 +85,51 @@ export function localSuggestions(state: State, current: PublicProduct): Suggesti
     .slice(0, SUGGESTION_COUNT)
     .map((product) => ({ product, reason: "" }));
 }
+
+/** Nombre d'articles proposés sous le panier. */
+export const CART_SUGGESTION_COUNT = 3;
+
+/**
+ * « Complétez votre panier » : ce qui va bien avec ce que le client a déjà choisi.
+ *
+ * Même matière première que les suggestions de fiche produit — les achats conjoints
+ * observés — mais agrégée sur tout le panier : un article acheté avec deux des
+ * produits présents pèse deux fois. À la différence de la fiche produit, on écarte
+ * ici franchement ce qui est en rupture : proposer d'ajouter au panier un article
+ * qu'on ne peut pas commander n'aurait aucun sens.
+ */
+export function cartSuggestions(
+  state: State,
+  productIds: string[],
+  count = CART_SUGGESTION_COUNT,
+): PublicProduct[] {
+  const inCart = new Set(productIds);
+  if (inCart.size === 0) return [];
+
+  const categories = new Set(
+    listPublicProducts(state)
+      .filter((product) => inCart.has(product.id) && product.category)
+      .map((product) => product.category),
+  );
+
+  const together = new Map<string, number>();
+  for (const productId of inCart) {
+    for (const [candidateId, hits] of coPurchaseCounts(state, productId)) {
+      if (inCart.has(candidateId)) continue;
+      together.set(candidateId, (together.get(candidateId) ?? 0) + hits);
+    }
+  }
+
+  return listPublicProducts(state)
+    .filter((product) => !inCart.has(product.id) && product.inStock)
+    .map((product) => {
+      let score = (together.get(product.id) ?? 0) * 10;
+      if (product.category && categories.has(product.category)) score += 5;
+      // Un petit complément s'ajoute plus volontiers qu'un second gros achat.
+      if (product.priceCents <= 500) score += 2;
+      return { product, score };
+    })
+    .sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, "fr"))
+    .slice(0, count)
+    .map((entry) => entry.product);
+}
