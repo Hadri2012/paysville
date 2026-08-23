@@ -27,25 +27,34 @@ export function toInt(value: unknown): number | null {
 export interface CartLineInput {
   productId: string;
   quantity: number;
+  /** Couleur choisie, si le produit en propose. `null`/absent sinon. */
+  colorId?: string | null;
 }
 
-/** Lit et borne les lignes de panier envoyées par le navigateur (jamais les prix !). */
+/**
+ * Lit et borne les lignes de panier envoyées par le navigateur (jamais les prix !).
+ *
+ * Deux lignes du même produit ne fusionnent que si elles portent la même couleur
+ * (ou aucune, pour un produit qui n'en propose pas) : un client peut vouloir un
+ * exemplaire noir et un exemplaire blanc dans la même commande, ce sont deux
+ * lignes distinctes jusqu'au bout — comptage, prix, préparation.
+ */
 export function parseCartItems(value: unknown): CartLineInput[] {
   if (!Array.isArray(value)) throw errors.validation("Panier invalide.");
-  const merged = new Map<string, number>();
+  const merged = new Map<string, CartLineInput>();
   for (const raw of value.slice(0, MAX_CART_LINES)) {
     if (!raw || typeof raw !== "object") continue;
     const productId = cleanString((raw as { productId?: unknown }).productId, 80);
     const quantity = toInt((raw as { quantity?: unknown }).quantity);
+    const colorId = cleanString((raw as { colorId?: unknown }).colorId, 40) || null;
     if (!productId || quantity === null) continue;
     if (quantity <= 0) continue;
-    const next = Math.min(
-      MAX_QUANTITY_PER_LINE,
-      (merged.get(productId) ?? 0) + quantity,
-    );
-    merged.set(productId, next);
+    const key = `${productId} ${colorId ?? ""}`;
+    const current = merged.get(key);
+    const next = Math.min(MAX_QUANTITY_PER_LINE, (current?.quantity ?? 0) + quantity);
+    merged.set(key, { productId, colorId, quantity: next });
   }
-  return [...merged.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+  return [...merged.values()];
 }
 
 export interface CheckoutIdentity {

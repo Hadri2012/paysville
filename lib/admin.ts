@@ -2,10 +2,46 @@ import { errors } from "./errors";
 import { isSafeImageUrl } from "./images";
 import { newId, slugify, uniqueSlug } from "./ids";
 import { parsePriceToCents } from "./money";
-import type { Product, Promotion, Settings, ShippingZone, State } from "./types";
+import {
+  MAX_PRODUCT_COLORS,
+  type Product,
+  type ProductColorOption,
+  type Promotion,
+  type Settings,
+  type ShippingZone,
+  type State,
+} from "./types";
 import { cleanString, normalizeLoose, toBoolean, toInt } from "./validation";
 
 /* ------------------------------- Produits -------------------------------- */
+
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+/**
+ * Couleurs proposées pour un produit, à partir du tableau envoyé par le
+ * formulaire admin. Une entrée invalide (nom vide) ou en double (même nom,
+ * insensible à la casse/aux accents) est simplement ignorée plutôt que de
+ * faire échouer tout l'enregistrement du produit — comme pour les communes
+ * d'une zone de livraison.
+ */
+function parseProductColors(raw: unknown): ProductColorOption[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const colors: ProductColorOption[] = [];
+  for (const entry of raw.slice(0, MAX_PRODUCT_COLORS)) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = cleanString((entry as { name?: unknown }).name, 40);
+    if (!name) continue;
+    const key = normalizeLoose(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const hexRaw = cleanString((entry as { hex?: unknown }).hex, 8);
+    const hex = HEX_COLOR_RE.test(hexRaw) ? hexRaw.toLowerCase() : "#6b7280";
+    const idRaw = cleanString((entry as { id?: unknown }).id, 40);
+    colors.push({ id: idRaw || newId(), name, hex });
+  }
+  return colors;
+}
 
 export function upsertProduct(
   state: State,
@@ -65,6 +101,15 @@ export function upsertProduct(
     body.sortOrder !== undefined ? toInt(body.sortOrder) : (existing?.sortOrder ?? 0);
   if (sortOrder === null) fieldErrors.sortOrder = "Ordre d'affichage invalide.";
 
+  // Un fichier téléchargeable n'a pas d'aspect physique : les couleurs n'ont
+  // pas de sens et sont neutralisées, comme le stock.
+  const colors =
+    kind === "digital"
+      ? []
+      : body.colors !== undefined
+        ? parseProductColors(body.colors)
+        : (existing?.colors ?? []);
+
   if (Object.keys(fieldErrors).length > 0) {
     throw errors.validation("Formulaire produit incomplet ou invalide.", fieldErrors);
   }
@@ -103,6 +148,7 @@ export function upsertProduct(
     // Les fichiers joints et le modèle 3D ont leurs propres routes d'upload :
     // seul le type change ici, sans jamais toucher aux assets existants.
     existing.kind = kind;
+    existing.colors = colors;
     existing.updatedAt = now;
     return existing;
   }
@@ -125,6 +171,7 @@ export function upsertProduct(
     kind,
     digitalFiles: [],
     model3d: null,
+    colors,
     createdAt: now,
     updatedAt: now,
   };

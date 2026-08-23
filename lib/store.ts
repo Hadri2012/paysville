@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -135,6 +135,21 @@ function migrate(state: State): State {
     for (const order of state.orders) {
       for (const item of order.items) {
         item.kind ??= "physical";
+      }
+    }
+  }
+
+  // v7 -> v8 : couleurs au choix sur les produits physiques. Aucun produit
+  // existant n'en proposait : tableau vide, et les commandes déjà passées
+  // n'avaient donc pas de couleur à enregistrer.
+  if (state.schemaVersion < 8) {
+    for (const product of state.products) {
+      product.colors ??= [];
+    }
+    for (const order of state.orders) {
+      for (const item of order.items) {
+        item.colorId ??= null;
+        item.colorName ??= null;
       }
     }
   }

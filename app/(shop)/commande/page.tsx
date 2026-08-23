@@ -517,11 +517,12 @@ function CheckoutForm() {
           <div className="stack" style={{ marginBottom: 14 }}>
             {(quote?.lines ?? []).map((line) => (
               <div
-                key={line.productId}
+                key={`${line.productId}:${line.colorId ?? ""}`}
                 style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
               >
                 <span className="small">
                   {line.quantity} × {line.name}
+                  {line.colorName ? ` (${line.colorName})` : ""}
                 </span>
                 <strong className="small nowrap">
                   {formatPrice(line.lineTotalCents, currency)}

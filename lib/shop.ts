@@ -7,7 +7,14 @@ import {
   distanceFromHubKm,
 } from "./geo";
 import { productImage } from "./images";
-import type { Product, ProductKind, Promotion, ShippingZone, State } from "./types";
+import type {
+  Product,
+  ProductColorOption,
+  ProductKind,
+  Promotion,
+  ShippingZone,
+  State,
+} from "./types";
 import { normalizeLoose, normalizeSearch, type CartLineInput } from "./validation";
 
 /* -------------------------------------------------------------------------- */
@@ -108,6 +115,8 @@ export interface PublicProduct {
   fileCount: number;
   /** Un modèle 3D interactif est disponible sur la fiche produit. */
   has3dModel: boolean;
+  /** Couleurs au choix ; vide = un seul aspect, pas de sélecteur à afficher. */
+  colors: ProductColorOption[];
   createdAt: string;
 }
 
@@ -129,6 +138,7 @@ export function toPublicProduct(state: State, product: Product): PublicProduct {
     fileFormats: product.kind === "digital" ? fileFormats(product.digitalFiles) : [],
     fileCount: product.kind === "digital" ? product.digitalFiles.length : 0,
     has3dModel: product.model3d !== null,
+    colors: product.colors,
     createdAt: product.createdAt,
   };
 }
@@ -438,6 +448,9 @@ export interface QuoteLine {
   available: number;
   /** `digital` : livré par téléchargement, sans stock ni frais de port. */
   kind: ProductKind;
+  /** Couleur choisie, si le produit en propose. `null` sinon. */
+  colorId: string | null;
+  colorName: string | null;
 }
 
 export interface QuoteIssue {
@@ -447,6 +460,8 @@ export interface QuoteIssue {
   message: string;
   /** quantité retenue après correction (0 = ligne retirée) */
   quantity: number;
+  /** Couleur de la ligne concernée, pour retrouver la bonne ligne côté panier. */
+  colorId: string | null;
 }
 
 export interface Quote {
@@ -491,6 +506,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
   const issues: QuoteIssue[] = [];
 
   for (const item of input.items) {
+    const colorId = item.colorId ?? null;
     const product = state.products.find((p) => p.id === item.productId);
     if (!product || product.archived || !product.active) {
       if (strict) throw errors.productNotFound(product?.name);
@@ -502,8 +518,30 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
           ? `« ${product.name} » n'est plus proposé à la vente.`
           : "Un produit de votre panier n'existe plus.",
         quantity: 0,
+        colorId,
       });
       continue;
+    }
+
+    // Une couleur au choix doit être précisée et rester valide : on le vérifie
+    // avant même le stock, une couleur inconnue ne dit rien de ce qui est
+    // réellement demandé.
+    let colorName: string | null = null;
+    if (product.colors.length > 0) {
+      const color = product.colors.find((c) => c.id === colorId);
+      if (!color) {
+        if (strict) throw errors.colorRequired(product.name);
+        issues.push({
+          productId: product.id,
+          name: product.name,
+          code: "color_required",
+          message: `Choisissez une couleur pour « ${product.name} ».`,
+          quantity: 0,
+          colorId,
+        });
+        continue;
+      }
+      colorName = color.name;
     }
 
     const available = purchasableQuantity(state, product);
@@ -518,6 +556,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
             ? `« ${product.name} » n'est pas encore disponible au téléchargement et a été retiré du panier.`
             : `« ${product.name} » est en rupture de stock et a été retiré du panier.`,
         quantity: 0,
+        colorId,
       });
       continue;
     }
@@ -534,6 +573,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
             code: "digital_single",
             message: `« ${product.name} » est un fichier téléchargeable : un seul exemplaire par commande.`,
             quantity: available,
+            colorId,
           });
         }
         quantity = available;
@@ -547,6 +587,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
             available > 1 ? "s" : ""
           } de « ${product.name} ».`,
           quantity: available,
+          colorId,
         });
         quantity = available;
       }
@@ -563,6 +604,8 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
       lineTotalCents: product.priceCents * quantity,
       available,
       kind: product.kind,
+      colorId: colorName !== null ? colorId : null,
+      colorName,
     });
   }
 

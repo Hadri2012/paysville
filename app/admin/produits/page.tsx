@@ -42,6 +42,7 @@ export default async function AdminProductsPage() {
             sizeBytes: product.model3d.sizeBytes,
           }
         : null,
+      colors: product.colors,
     }));
 
   return (

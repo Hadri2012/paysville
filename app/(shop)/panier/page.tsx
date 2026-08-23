@@ -73,11 +73,14 @@ export default function CartPage() {
   useEffect(() => {
     if (!quote || quote.issues.length === 0) return;
     for (const issue of quote.issues) {
-      const current = items.find((item) => item.productId === issue.productId);
+      const current = items.find(
+        (item) =>
+          item.productId === issue.productId && (item.colorId ?? null) === issue.colorId,
+      );
       if (!current) continue;
-      if (issue.quantity <= 0) remove(issue.productId);
+      if (issue.quantity <= 0) remove(issue.productId, issue.colorId);
       else if (current.quantity !== issue.quantity) {
-        setQuantity(issue.productId, issue.quantity);
+        setQuantity(issue.productId, issue.quantity, issue.colorId);
       }
     }
   }, [quote, items, remove, setQuantity]);
@@ -152,7 +155,9 @@ export default function CartPage() {
               <strong>Votre panier a été mis à jour :</strong>
               <ul>
                 {quote.issues.map((issue) => (
-                  <li key={`${issue.productId}-${issue.code}`}>{issue.message}</li>
+                  <li key={`${issue.productId}-${issue.colorId ?? ""}-${issue.code}`}>
+                    {issue.message}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -165,7 +170,7 @@ export default function CartPage() {
               <div className="skeleton" style={{ height: 180 }} />
             ) : (
               (quote?.lines ?? []).map((line) => (
-                <div className="cart-line" key={line.productId}>
+                <div className="cart-line" key={`${line.productId}:${line.colorId ?? ""}`}>
                   <div className="cart-line-media">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={line.imageUrl} alt={line.name} />
@@ -176,6 +181,9 @@ export default function CartPage() {
                       <Link href={`/produit/${line.slug}`}>{line.name}</Link>
                     </div>
                     <div className="product-sku">{line.sku}</div>
+                    {line.colorName ? (
+                      <div className="small muted">Couleur : {line.colorName}</div>
+                    ) : null}
                     <div className="small muted">
                       {line.kind === "digital"
                         ? formatPrice(line.unitPriceCents, currency)
@@ -190,7 +198,7 @@ export default function CartPage() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       style={{ marginTop: 6, paddingLeft: 0 }}
-                      onClick={() => remove(line.productId)}
+                      onClick={() => remove(line.productId, line.colorId)}
                     >
                       Supprimer
                     </button>
@@ -206,7 +214,9 @@ export default function CartPage() {
                         <button
                           type="button"
                           aria-label={`Diminuer la quantité de ${line.name}`}
-                          onClick={() => setQuantity(line.productId, line.quantity - 1)}
+                          onClick={() =>
+                            setQuantity(line.productId, line.quantity - 1, line.colorId)
+                          }
                         >
                           −
                         </button>
@@ -215,7 +225,9 @@ export default function CartPage() {
                           type="button"
                           aria-label={`Augmenter la quantité de ${line.name}`}
                           disabled={line.quantity >= line.available}
-                          onClick={() => setQuantity(line.productId, line.quantity + 1)}
+                          onClick={() =>
+                            setQuantity(line.productId, line.quantity + 1, line.colorId)
+                          }
                         >
                           +
                         </button>
@@ -340,13 +352,24 @@ export default function CartPage() {
                     <div className="product-price">
                       {formatPrice(product.priceCents, currency)}
                     </div>
-                    <AddToCartButton
-                      productId={product.id}
-                      name={product.name}
-                      available={product.available}
-                      className="btn btn-secondary btn-sm"
-                      label="Ajouter"
-                    />
+                    {/* Un produit à couleurs a besoin de la fiche produit pour
+                        choisir laquelle : l'ajout rapide n'aurait pas de sens ici. */}
+                    {product.colors.length > 0 ? (
+                      <Link
+                        href={`/produit/${product.slug}`}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        Voir le produit
+                      </Link>
+                    ) : (
+                      <AddToCartButton
+                        productId={product.id}
+                        name={product.name}
+                        available={product.available}
+                        className="btn btn-secondary btn-sm"
+                        label="Ajouter"
+                      />
+                    )}
                   </div>
                 </article>
               ))}

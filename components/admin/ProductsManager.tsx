@@ -4,9 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
 import { centsToInput, formatPrice } from "@/lib/money";
-import type { ProductKind } from "@/lib/types";
+import { MAX_PRODUCT_COLORS, type ProductKind } from "@/lib/types";
 import { apiCall, type ApiResult } from "./apiClient";
 import { ProductAssets, type AdminProductFile } from "./ProductAssets";
+
+export interface AdminProductColor {
+  id: string;
+  name: string;
+  hex: string;
+}
 
 export interface AdminProductRow {
   id: string;
@@ -26,6 +32,7 @@ export interface AdminProductRow {
   kind: ProductKind;
   digitalFiles: AdminProductFile[];
   model3d: AdminProductFile | null;
+  colors: AdminProductColor[];
 }
 
 interface Draft {
@@ -40,7 +47,11 @@ interface Draft {
   sortOrder: string;
   active: boolean;
   kind: ProductKind;
+  colors: AdminProductColor[];
 }
+
+/** Pastille par défaut d'une couleur qu'on vient d'ajouter, avant réglage. */
+const DEFAULT_COLOR_HEX = "#6b7280";
 
 function emptyDraft(nextOrder: number): Draft {
   return {
@@ -55,6 +66,7 @@ function emptyDraft(nextOrder: number): Draft {
     sortOrder: String(nextOrder),
     active: true,
     kind: "physical",
+    colors: [],
   };
 }
 
@@ -71,6 +83,7 @@ function toDraft(product: AdminProductRow): Draft {
     sortOrder: String(product.sortOrder),
     active: product.active,
     kind: product.kind,
+    colors: product.colors,
   };
 }
 
@@ -101,6 +114,40 @@ export function ProductsManager({
   const update = (key: keyof Draft, value: string | boolean) =>
     setDraft((current) => (current ? { ...current, [key]: value } : current));
 
+  const addColor = () =>
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            colors: [
+              ...current.colors,
+              {
+                id: typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `c${Date.now()}`,
+                name: "",
+                hex: DEFAULT_COLOR_HEX,
+              },
+            ],
+          }
+        : current,
+    );
+
+  const updateColor = (index: number, patch: Partial<AdminProductColor>) =>
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            colors: current.colors.map((color, i) =>
+              i === index ? { ...color, ...patch } : color,
+            ),
+          }
+        : current,
+    );
+
+  const removeColor = (index: number) =>
+    setDraft((current) =>
+      current ? { ...current, colors: current.colors.filter((_, i) => i !== index) } : current,
+    );
+
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!draft) return;
@@ -119,6 +166,7 @@ export function ProductsManager({
       sortOrder: draft.sortOrder,
       active: draft.active,
       kind: draft.kind,
+      colors: draft.colors,
     };
 
     const result = draft.id
@@ -353,6 +401,57 @@ export function ProductsManager({
               ) : null}
             </div>
 
+            {draft.kind === "physical" ? (
+              <div className="field field-full">
+                <label>Couleurs proposées</label>
+                <span className="hint" style={{ display: "block", marginBottom: 8 }}>
+                  Facultatif. Dès qu&apos;une couleur est ajoutée, les clients doivent en
+                  choisir une avant de commander. Le stock reste unique, partagé entre
+                  toutes les couleurs.
+                </span>
+
+                {draft.colors.length > 0 ? (
+                  <div className="color-rows">
+                    {draft.colors.map((color, index) => (
+                      <div className="color-row" key={color.id}>
+                        <input
+                          type="color"
+                          value={color.hex}
+                          onChange={(event) => updateColor(index, { hex: event.target.value })}
+                          aria-label={`Pastille de la couleur « ${color.name || "sans nom"} »`}
+                        />
+                        <input
+                          type="text"
+                          value={color.name}
+                          onChange={(event) => updateColor(index, { name: event.target.value })}
+                          placeholder="Ex. Noir"
+                          maxLength={40}
+                          aria-label="Nom de la couleur"
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm btn-icon-danger"
+                          onClick={() => removeColor(index)}
+                        >
+                          Retirer
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginTop: 8 }}
+                  disabled={draft.colors.length >= MAX_PRODUCT_COLORS}
+                  onClick={addColor}
+                >
+                  + Ajouter une couleur
+                </button>
+              </div>
+            ) : null}
+
             <div className="field field-full">
               <label className="checkbox">
                 <input
@@ -449,6 +548,14 @@ export function ProductsManager({
                     {product.model3d ? (
                       <span className="badge badge-3d" title="Aperçu 3D disponible">
                         🧊 3D
+                      </span>
+                    ) : null}
+                    {product.colors.length > 0 ? (
+                      <span
+                        className="badge"
+                        title={product.colors.map((c) => c.name).join(", ")}
+                      >
+                        🎨 {product.colors.length}
                       </span>
                     ) : null}
                   </td>

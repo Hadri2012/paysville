@@ -89,7 +89,7 @@ export async function createCheckoutSession(
         currency,
         unit_amount: item.unitPriceCents,
         product_data: {
-          name: item.name,
+          name: item.colorName ? `${item.name} — ${item.colorName}` : item.name,
           metadata: { sku: item.sku },
         },
       },

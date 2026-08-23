@@ -72,17 +72,25 @@ export function ProductCard({
         ) : null}
         <div className="product-price">{formatPrice(product.priceCents, currency)}</div>
         <div className="product-actions">
-          <Link href={`/produit/${product.slug}`} className="btn btn-secondary btn-sm">
+          <Link
+            href={`/produit/${product.slug}`}
+            className="btn btn-secondary btn-sm"
+            style={product.colors.length > 0 ? { gridColumn: "1 / -1" } : undefined}
+          >
             Voir le produit
           </Link>
-          <AddToCartButton
-            productId={product.id}
-            name={product.name}
-            disabled={!product.inStock}
-            available={product.available}
-            className="btn btn-primary btn-sm"
-            label="Ajouter"
-          />
+          {/* Un produit à couleurs se choisit sur sa fiche : l'ajout rapide
+              depuis la grille n'aurait pas de couleur à proposer. */}
+          {product.colors.length === 0 ? (
+            <AddToCartButton
+              productId={product.id}
+              name={product.name}
+              disabled={!product.inStock}
+              available={product.available}
+              className="btn btn-primary btn-sm"
+              label="Ajouter"
+            />
+          ) : null}
         </div>
       </div>
     </article>

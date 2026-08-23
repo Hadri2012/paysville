@@ -187,6 +187,7 @@ export function initialState(): State {
     kind: "physical",
     digitalFiles: [],
     model3d: null,
+    colors: [],
     createdAt: now,
     updatedAt: now,
   }));

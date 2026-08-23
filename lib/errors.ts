@@ -49,6 +49,22 @@ export const errors = {
       "Nous ne livrons pas encore à cette adresse. Hadrishop livre uniquement dans les communes indiquées sur la page Livraison.",
       400,
     ),
+  colorRequired: (name?: string) =>
+    new AppError(
+      "color_required",
+      name
+        ? `Choisissez une couleur pour « ${name} » avant de l'ajouter au panier.`
+        : "Choisissez une couleur avant de commander.",
+      400,
+    ),
+  invalidColor: (name?: string) =>
+    new AppError(
+      "invalid_color",
+      name
+        ? `La couleur choisie pour « ${name} » n'est plus proposée.`
+        : "Cette couleur n'est plus proposée.",
+      400,
+    ),
   invalidCustomerData: (details: Record<string, string>) =>
     new AppError(
       "invalid_customer_data",

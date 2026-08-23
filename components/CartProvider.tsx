@@ -12,6 +12,8 @@ import {
 
 export interface CartItem {
   productId: string;
+  /** Couleur choisie, si le produit en propose. `null` sinon. */
+  colorId: string | null;
   quantity: number;
 }
 
@@ -19,9 +21,15 @@ interface CartContextValue {
   items: CartItem[];
   count: number;
   hydrated: boolean;
-  add: (productId: string, quantity?: number, label?: string, max?: number) => void;
-  setQuantity: (productId: string, quantity: number) => void;
-  remove: (productId: string) => void;
+  add: (
+    productId: string,
+    quantity?: number,
+    label?: string,
+    max?: number,
+    colorId?: string | null,
+  ) => void;
+  setQuantity: (productId: string, quantity: number, colorId?: string | null) => void;
+  remove: (productId: string, colorId?: string | null) => void;
   clear: () => void;
   notify: (message: string) => void;
 }
@@ -30,6 +38,15 @@ const STORAGE_KEY = "hadrishop.cart.v1";
 const MAX_QTY = 20;
 
 const CartContext = createContext<CartContextValue | null>(null);
+
+/**
+ * Même produit, couleur différente : deux lignes distinctes. On veut pouvoir
+ * mettre un exemplaire noir et un blanc dans la même commande sans que l'un
+ * n'écrase l'autre.
+ */
+function sameLine(a: { productId: string; colorId: string | null }, b: { productId: string; colorId: string | null }): boolean {
+  return a.productId === b.productId && (a.colorId ?? null) === (b.colorId ?? null);
+}
 
 function readStorage(): CartItem[] {
   if (typeof window === "undefined") return [];
@@ -40,13 +57,16 @@ function readStorage(): CartItem[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter(
-        (item): item is CartItem =>
+        (item): item is { productId: string; colorId?: unknown; quantity: number } =>
           Boolean(item) &&
           typeof item.productId === "string" &&
           Number.isFinite(item.quantity),
       )
       .map((item) => ({
         productId: item.productId,
+        // Panier enregistré avant l'existence des couleurs : traité comme
+        // « sans couleur », ce qu'il était déjà de fait.
+        colorId: typeof item.colorId === "string" ? item.colorId : null,
         quantity: Math.min(MAX_QTY, Math.max(1, Math.trunc(item.quantity))),
       }));
   } catch {
@@ -97,21 +117,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const add = useCallback(
-    (productId: string, quantity = 1, label?: string, max?: number) => {
+    (
+      productId: string,
+      quantity = 1,
+      label?: string,
+      max?: number,
+      colorId: string | null = null,
+    ) => {
       // `max` (le stock disponible) borne le total obtenu, pas seulement la quantité
       // ajoutée : sans ça, ajouter par petites touches permettrait de dépasser le
       // stock réel avant même que le serveur ne recalcule le panier.
       const cap = max === undefined ? MAX_QTY : Math.min(MAX_QTY, Math.max(0, max));
+      const line = { productId, colorId };
       let blocked = false;
       setItems((current) => {
-        const existing = current.find((item) => item.productId === productId);
+        const existing = current.find((item) => sameLine(item, line));
         if (existing) {
           if (existing.quantity >= cap) {
             blocked = true;
             return current;
           }
           return current.map((item) =>
-            item.productId === productId
+            sameLine(item, line)
               ? { ...item, quantity: Math.min(cap, item.quantity + quantity) }
               : item,
           );
@@ -120,7 +147,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           blocked = true;
           return current;
         }
-        return [...current, { productId, quantity: Math.min(cap, quantity) }];
+        return [...current, { productId, colorId, quantity: Math.min(cap, quantity) }];
       });
       if (blocked) {
         notify("Quantité maximale déjà atteinte dans le panier");
@@ -131,19 +158,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [notify],
   );
 
-  const setQuantity = useCallback((productId: string, quantity: number) => {
-    setItems((current) => {
-      if (quantity <= 0) return current.filter((item) => item.productId !== productId);
-      return current.map((item) =>
-        item.productId === productId
-          ? { ...item, quantity: Math.min(MAX_QTY, quantity) }
-          : item,
-      );
-    });
-  }, []);
+  const setQuantity = useCallback(
+    (productId: string, quantity: number, colorId: string | null = null) => {
+      const line = { productId, colorId };
+      setItems((current) => {
+        if (quantity <= 0) return current.filter((item) => !sameLine(item, line));
+        return current.map((item) =>
+          sameLine(item, line) ? { ...item, quantity: Math.min(MAX_QTY, quantity) } : item,
+        );
+      });
+    },
+    [],
+  );
 
-  const remove = useCallback((productId: string) => {
-    setItems((current) => current.filter((item) => item.productId !== productId));
+  const remove = useCallback((productId: string, colorId: string | null = null) => {
+    const line = { productId, colorId };
+    setItems((current) => current.filter((item) => !sameLine(item, line)));
   }, []);
 
   const clear = useCallback(() => setItems([]), []);

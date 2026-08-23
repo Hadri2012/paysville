@@ -144,6 +144,7 @@ export default async function ProductPage({ params }: Props) {
               name={product.name}
               available={product.available}
               kind={product.kind}
+              colors={product.colors}
             />
 
             <div className="panel small">

@@ -54,6 +54,21 @@ export const MAX_DIGITAL_FILES = 10;
 export const MAX_DIGITAL_FILE_BYTES = 10_000_000;
 export const MAX_MODEL3D_BYTES = 6_000_000;
 
+/**
+ * Couleur proposée pour un produit physique, définie par l'administration.
+ * Le stock reste unique par produit — la couleur est un choix affiché et
+ * enregistré avec la commande, pas une déclinaison avec son propre stock.
+ */
+export interface ProductColorOption {
+  id: string;
+  name: string;
+  /** Code hexadécimal pour la pastille visuelle, ex. « #1a1a1a ». */
+  hex: string;
+}
+
+/** Nombre maximal de couleurs proposées pour un même produit. */
+export const MAX_PRODUCT_COLORS = 12;
+
 export interface Product {
   id: string;
   sku: string;
@@ -73,6 +88,8 @@ export interface Product {
   digitalFiles: DigitalFile[];
   /** Modèle 3D optionnel (aperçu interactif), quel que soit le type de produit. */
   model3d: Product3DModel | null;
+  /** Couleurs proposées au choix ; vide = pas de choix de couleur pour ce produit. */
+  colors: ProductColorOption[];
   createdAt: string;
   updatedAt: string;
 }
@@ -87,6 +104,9 @@ export interface OrderItem {
   imageUrl: string;
   /** Nature de l'article au moment de l'achat : conditionne stock et livraison. */
   kind: ProductKind;
+  /** Couleur choisie, si le produit en proposait. `null` sinon. */
+  colorId: string | null;
+  colorName: string | null;
 }
 
 export interface OrderCustomer {

@@ -150,7 +150,7 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
             </thead>
             <tbody>
               {order.items.map((item) => (
-                <tr key={item.sku + item.name}>
+                <tr key={item.sku + item.name + (item.colorName ?? "")}>
                   <td>
                     <strong>{item.name}</strong>
                     {item.kind === "digital" ? (
@@ -158,7 +158,10 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
                         Fichier
                       </span>
                     ) : null}
-                    <div className="product-sku">{item.sku}</div>
+                    <div className="product-sku">
+                      {item.sku}
+                      {item.colorName ? ` · ${item.colorName}` : ""}
+                    </div>
                   </td>
                   <td className="num">
                     {formatPrice(item.unitPriceCents, order.currency)}

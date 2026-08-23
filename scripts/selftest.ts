@@ -11,6 +11,7 @@ import {
   formatBytes,
   orderDownloads,
 } from "../lib/digital";
+import { upsertProduct } from "../lib/admin";
 import { newId } from "../lib/ids";
 import { confirmOrderPayment, createPendingOrder, publicOrderView } from "../lib/orders";
 import { cartSuggestions } from "../lib/recommendations";
@@ -34,9 +35,9 @@ import {
   sweepReservations,
 } from "../lib/shop";
 import { readState, transaction } from "../lib/store";
-import { MAX_REVIEW_PHOTOS, type Product } from "../lib/types";
+import { MAX_PRODUCT_COLORS, MAX_REVIEW_PHOTOS, type Product } from "../lib/types";
 import { decodeUpload, isGlbFile, newAssetId, sanitizeFileName } from "../lib/uploads";
-import { parseCheckoutIdentity, type CheckoutIdentity } from "../lib/validation";
+import { parseCartItems, parseCheckoutIdentity, type CheckoutIdentity } from "../lib/validation";
 
 let failures = 0;
 
@@ -656,6 +657,7 @@ async function main() {
         },
       ],
       model3d: null,
+      colors: [],
       createdAt: now,
       updatedAt: now,
     };
@@ -783,6 +785,150 @@ async function main() {
     orderDownloads(await readState(), refunded).length === 0,
   );
   await deleteAsset(digitalAssetId);
+
+  console.log("\n== Couleurs de produit ==");
+  const [noirId, blancId] = await transaction((state) => {
+    const product = state.products.find((p) => p.id === p2.id)!;
+    product.colors = [
+      { id: newId(), name: "Noir", hex: "#111111" },
+      { id: newId(), name: "Blanc", hex: "#f5f5f5" },
+    ];
+    return product.colors.map((c) => c.id);
+  });
+  const state12 = await readState();
+  const p2Public = listPublicProducts(state12).find((p) => p.id === p2.id)!;
+  check(
+    "couleurs exposées au catalogue",
+    p2Public.colors.length === 2 && p2Public.colors.map((c) => c.name).join(",") === "Noir,Blanc",
+  );
+
+  expectThrows(
+    "commande stricte sans couleur refusée",
+    () =>
+      buildQuote(
+        state12,
+        { items: [{ productId: p2.id, quantity: 1 }], strict: true },
+      ),
+    "color_required",
+  );
+  const noColorQuote = buildQuote(state12, {
+    items: [{ productId: p2.id, quantity: 1 }],
+  });
+  check(
+    "sans couleur : ligne retirée avec un message",
+    noColorQuote.lines.length === 0 &&
+      noColorQuote.issues.some((issue) => issue.code === "color_required"),
+  );
+
+  const badColorQuote = buildQuote(state12, {
+    items: [{ productId: p2.id, quantity: 1, colorId: "inconnue" }],
+  });
+  check(
+    "couleur inexistante : même refus que l'absence de couleur",
+    badColorQuote.lines.length === 0 &&
+      badColorQuote.issues.some((issue) => issue.code === "color_required"),
+  );
+
+  const colorQuote = buildQuote(state12, {
+    items: [
+      { productId: p2.id, quantity: 1, colorId: noirId },
+      { productId: p2.id, quantity: 1, colorId: blancId },
+    ],
+  });
+  check(
+    "deux couleurs du même produit : deux lignes distinctes",
+    colorQuote.lines.length === 2,
+    `${colorQuote.lines.length}`,
+  );
+  check(
+    "chaque ligne porte le nom de sa couleur",
+    colorQuote.lines.find((l) => l.colorId === noirId)?.colorName === "Noir" &&
+      colorQuote.lines.find((l) => l.colorId === blancId)?.colorName === "Blanc",
+  );
+
+  const mergedColorItems = parseCartItems([
+    { productId: p2.id, quantity: 1, colorId: noirId },
+    { productId: p2.id, quantity: 2, colorId: noirId },
+    { productId: p2.id, quantity: 1, colorId: blancId },
+  ]);
+  check(
+    "panier : même couleur fusionnée, couleur différente distincte",
+    mergedColorItems.length === 2 &&
+      mergedColorItems.find((i) => i.colorId === noirId)?.quantity === 3 &&
+      mergedColorItems.find((i) => i.colorId === blancId)?.quantity === 1,
+  );
+
+  const colorOrder = await transaction((state) => {
+    const quote = buildQuote(state, {
+      items: [{ productId: p2.id, quantity: 1, colorId: noirId }],
+    });
+    return createPendingOrder(state, { quote, identity });
+  });
+  check(
+    "la couleur est enregistrée sur l'article de commande",
+    colorOrder.items[0]?.colorId === noirId && colorOrder.items[0]?.colorName === "Noir",
+  );
+  check(
+    "la vue publique affiche le nom de la couleur",
+    publicOrderView(colorOrder).items[0]?.colorName === "Noir",
+  );
+
+  const withDuplicateColors = upsertProduct(await readState(), {
+    sku: "COLTEST",
+    name: "Test couleurs",
+    price: "9,99",
+    stock: "5",
+    colors: [
+      { name: "Rouge", hex: "#ff0000" },
+      { name: "rouge", hex: "#00ff00" }, // doublon (casse) : ignoré
+      { name: "Vert", hex: "pas-un-hex" }, // hex invalide : gris par défaut
+      { name: "" }, // nom vide : ignoré
+    ],
+  });
+  check(
+    "doublon de nom ignoré",
+    withDuplicateColors.colors.filter((c) => c.name.toLowerCase() === "rouge").length === 1,
+  );
+  check(
+    "hex invalide retombe sur le gris par défaut",
+    withDuplicateColors.colors.find((c) => c.name === "Vert")?.hex === "#6b7280",
+  );
+  check("nom vide ignoré", !withDuplicateColors.colors.some((c) => c.name === ""));
+  check(
+    "seules les entrées valides sont conservées",
+    withDuplicateColors.colors.length === 2,
+    `${withDuplicateColors.colors.length}`,
+  );
+
+  // Le plafond s'applique aux entrées reçues, avant tri : au-delà, le reste
+  // n'est même pas examiné (comme pour les fichiers numériques).
+  const withTooManyColors = upsertProduct(await readState(), {
+    sku: "COLTEST3",
+    name: "Trop de couleurs",
+    price: "9,99",
+    stock: "5",
+    colors: Array.from({ length: MAX_PRODUCT_COLORS + 5 }, (_, i) => ({
+      name: `Couleur ${i}`,
+      hex: "#123456",
+    })),
+  });
+  check(
+    `pas plus de ${MAX_PRODUCT_COLORS} couleurs`,
+    withTooManyColors.colors.length === MAX_PRODUCT_COLORS,
+    `${withTooManyColors.colors.length}`,
+  );
+
+  const digitalWithColors = upsertProduct(await readState(), {
+    sku: "COLTEST2",
+    name: "Fichier avec couleurs par erreur",
+    price: "9,99",
+    kind: "digital",
+    colors: [{ name: "Noir", hex: "#111111" }],
+  });
+  check(
+    "un produit numérique ne garde aucune couleur",
+    digitalWithColors.colors.length === 0,
+  );
 
   console.log(
     failures === 0
