@@ -647,6 +647,7 @@ hr {
 .qty {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   overflow: hidden;
