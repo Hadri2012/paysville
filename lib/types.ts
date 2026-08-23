@@ -117,6 +117,15 @@ export interface Promotion {
   updatedAt: string;
 }
 
+/** Réponse publique de la boutique sous un avis. */
+export interface ReviewReply {
+  text: string;
+  at: string;
+}
+
+/** Longueur maximale d'une réponse de la boutique (partagée avec le formulaire admin). */
+export const MAX_REPLY_LENGTH = 800;
+
 /**
  * Avis client sur un produit. Publié immédiatement, mais signalé automatiquement
  * si le filtre anti-spam détecte du contenu suspect.
@@ -129,6 +138,17 @@ export interface Review {
   rating: number;
   comment: string;
   flagged: boolean;
+  /**
+   * Achat confirmé : au dépôt de l'avis, une commande payée contenant ce produit
+   * portait l'adresse e-mail donnée par l'auteur. L'e-mail lui-même n'est pas
+   * conservé — seul le résultat de la vérification l'est.
+   */
+  verified: boolean;
+  /** Réponse de la boutique, affichée sous l'avis. `null` tant qu'il n'y en a pas. */
+  reply: ReviewReply | null;
+  /** Votes « cet avis m'a été utile » / « pas utile ». */
+  helpfulYes: number;
+  helpfulNo: number;
   createdAt: string;
 }
 

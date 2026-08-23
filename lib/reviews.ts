@@ -1,5 +1,6 @@
 import { newId } from "./ids";
-import type { Review, State } from "./types";
+import { MAX_REPLY_LENGTH, type Review, type State } from "./types";
+import { cleanString } from "./validation";
 
 export interface ReviewSummary {
   /** Moyenne sur 5, arrondie au dixième. `null` s'il n'y a aucun avis publié. */
@@ -102,11 +103,42 @@ export function reviewSummaries(state: State): Map<string, ReviewSummary> {
   return summaries;
 }
 
+/**
+ * L'auteur a-t-il réellement acheté ce produit ?
+ *
+ * On cherche une commande payée contenant l'article, passée avec cette adresse
+ * e-mail. Le paiement suffit : attendre le statut « Livrée » ferait dépendre le
+ * badge d'un clic de la boutique dans l'administration, et priverait de badge des
+ * acheteurs bien réels. En revanche une commande annulée ou remboursée ne compte
+ * pas — l'achat n'a pas tenu.
+ */
+export function isVerifiedPurchase(
+  state: State,
+  productId: string,
+  email: string,
+): boolean {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return false;
+  return state.orders.some(
+    (order) =>
+      order.customer.email.trim().toLowerCase() === needle &&
+      order.paymentStatus === "paid" &&
+      order.status !== "canceled" &&
+      order.status !== "refunded" &&
+      order.items.some((item) => item.productId === productId),
+  );
+}
+
 export interface NewReviewInput {
   productId: string;
   author: string;
   rating: number;
   comment: string;
+  /**
+   * E-mail facultatif, utilisé seulement ici pour décider du badge « achat
+   * vérifié ». Il n'est jamais recopié dans l'avis enregistré.
+   */
+  email?: string;
 }
 
 export function createReview(state: State, input: NewReviewInput): Review {
@@ -117,10 +149,28 @@ export function createReview(state: State, input: NewReviewInput): Review {
     rating: input.rating,
     comment: input.comment,
     flagged: isSpam(input.author, input.comment),
+    verified: input.email
+      ? isVerifiedPurchase(state, input.productId, input.email)
+      : false,
+    reply: null,
+    helpfulYes: 0,
+    helpfulNo: 0,
     createdAt: new Date().toISOString(),
   };
   state.reviews.push(review);
   return review;
+}
+
+/** Écrit ou efface la réponse de la boutique (texte vide = suppression). */
+export function setReviewReply(review: Review, text: string): void {
+  const clean = cleanString(text, MAX_REPLY_LENGTH);
+  review.reply = clean ? { text: clean, at: new Date().toISOString() } : null;
+}
+
+/** Enregistre un vote d'utilité. Le compteur ne redescend jamais sous zéro. */
+export function voteReviewHelpful(review: Review, helpful: boolean): void {
+  if (helpful) review.helpfulYes = Math.max(0, review.helpfulYes) + 1;
+  else review.helpfulNo = Math.max(0, review.helpfulNo) + 1;
 }
 
 export function publicReviewView(review: Review) {
@@ -129,6 +179,10 @@ export function publicReviewView(review: Review) {
     author: review.author,
     rating: review.rating,
     comment: review.comment,
+    verified: review.verified,
+    reply: review.reply,
+    helpfulYes: review.helpfulYes,
+    helpfulNo: review.helpfulNo,
     createdAt: review.createdAt,
   };
 }

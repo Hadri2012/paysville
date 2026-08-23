@@ -153,7 +153,10 @@ export default async function ProductPage({ params }: Props) {
 
           <div className="review-layout">
             <div>
-              <ReviewList reviews={reviews.map(publicReviewView)} />
+              <ReviewList
+                reviews={reviews.map(publicReviewView)}
+                shopName={state.settings.shopName}
+              />
             </div>
             <aside className="card">
               <h3 className="card-title">Donner mon avis</h3>

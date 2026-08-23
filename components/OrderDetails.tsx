@@ -6,6 +6,7 @@ import {
   type OrderStatus,
   type PaymentStatus,
 } from "@/lib/types";
+import { OrderTimeline } from "./OrderTimeline";
 
 export function StatusBadge({ status }: { status: OrderStatus }) {
   const tone: Record<OrderStatus, string> = {
@@ -160,16 +161,8 @@ export function OrderDetails({ order }: { order: PublicOrderView }) {
         </section>
 
         <section className="card">
-          <h3 className="card-title">Historique</h3>
-          <ul className="timeline">
-            {order.statusHistory.map((event, index) => (
-              <li key={`${event.at}-${index}`}>
-                <strong>{ORDER_STATUS_LABELS[event.status]}</strong>
-                <div className="small muted">{formatDate(event.at)}</div>
-                {event.note ? <div className="small">{event.note}</div> : null}
-              </li>
-            ))}
-          </ul>
+          <h3 className="card-title">Suivi</h3>
+          <OrderTimeline status={order.status} statusHistory={order.statusHistory} />
         </section>
       </div>
     </div>

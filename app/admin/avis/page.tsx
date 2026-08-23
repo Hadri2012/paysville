@@ -28,11 +28,16 @@ export default async function AdminReviewsPage() {
         rating: review.rating,
         comment: review.comment,
         flagged: review.flagged,
+        verified: review.verified,
+        reply: review.reply,
+        helpfulYes: review.helpfulYes,
+        helpfulNo: review.helpfulNo,
         createdAt: review.createdAt,
       };
     });
 
   const flagged = rows.filter((row) => row.flagged).length;
+  const unanswered = rows.filter((row) => !row.flagged && !row.reply).length;
 
   return (
     <div className="stack-lg">
@@ -42,9 +47,15 @@ export default async function AdminReviewsPage() {
           <p>
             {rows.length} avis au total
             {flagged > 0
-              ? ` — ${flagged} marqué${flagged > 1 ? "s" : ""} comme spam.`
-              : " — aucun spam détecté."}{" "}
+              ? ` — ${flagged} marqué${flagged > 1 ? "s" : ""} comme spam`
+              : " — aucun spam détecté"}
+            {unanswered > 0
+              ? `, ${unanswered} sans réponse de votre part.`
+              : rows.length > 0
+                ? ", tous ont reçu une réponse."
+                : "."}{" "}
             Les avis sont publiés immédiatement, mais ceux soupçonnés de spam sont marqués.
+            Votre réponse apparaît sous l&apos;avis, sur la fiche produit.
           </p>
         </div>
       </div>

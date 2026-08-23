@@ -7,10 +7,14 @@ import { useState } from "react";
  * Formulaire de dépôt d'avis. L'avis est publié immédiatement, sauf si le filtre
  * automatique le retient — auquel cas le message le dit, puisque l'auteur ne le
  * retrouverait pas dans la liste.
+ *
+ * L'e-mail est facultatif : il ne sert qu'à retrouver une commande payée portant ce
+ * produit, pour afficher la mention « achat vérifié ». Le serveur ne l'enregistre pas.
  */
 export function ReviewForm({ productId }: { productId: string }) {
   const router = useRouter();
   const [author, setAuthor] = useState("");
+  const [email, setEmail] = useState("");
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,7 +30,7 @@ export function ReviewForm({ productId }: { productId: string }) {
       const response = await fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, author, rating, comment }),
+        body: JSON.stringify({ productId, author, email, rating, comment }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -41,6 +45,7 @@ export function ReviewForm({ productId }: { productId: string }) {
         text: data.message ?? "Merci ! Votre avis a bien été enregistré.",
       });
       setAuthor("");
+      setEmail("");
       setComment("");
       setRating(5);
       // Publié immédiatement : la liste au-dessus doit le montrer sans rechargement.
@@ -73,6 +78,24 @@ export function ReviewForm({ productId }: { productId: string }) {
           required
           autoComplete="given-name"
         />
+      </div>
+
+      <div className="field">
+        <label htmlFor="review-email">Adresse e-mail de votre commande</label>
+        <input
+          id="review-email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          maxLength={160}
+          autoComplete="email"
+          placeholder="facultatif"
+        />
+        <span className="hint">
+          Si une commande payée à cette adresse contient ce produit, votre avis
+          portera la mention « achat vérifié ». L&apos;adresse n&apos;est ni affichée
+          ni conservée.
+        </span>
       </div>
 
       <fieldset className="field rating-picker">

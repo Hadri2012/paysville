@@ -1,11 +1,18 @@
 /**
  * Test de la logique métier critique de Hadrishop (stock, réservations, promotions,
- * zones de livraison, calcul serveur des totaux).
+ * zones de livraison, calcul serveur des totaux, avis clients).
  *
  *   npm run selftest
  */
 import { newId } from "../lib/ids";
 import { confirmOrderPayment, createPendingOrder } from "../lib/orders";
+import {
+  approvedReviews,
+  createReview,
+  isVerifiedPurchase,
+  setReviewReply,
+  voteReviewHelpful,
+} from "../lib/reviews";
 import { buildQuote, availableStock, sweepReservations } from "../lib/shop";
 import { readState, transaction } from "../lib/store";
 import type { CheckoutIdentity } from "../lib/validation";
@@ -267,6 +274,102 @@ async function main() {
   console.log("\n== Compteur de promotion ==");
   const promo = state5.promotions.find((p) => p.id === promoId)!;
   check("compteur d'utilisation à 0 (promo non utilisée)", promo.uses === 0);
+
+  console.log("\n== Avis clients ==");
+  // `orderA` (p4) a été payée avec identity.customer.email ; `orderB` (p5) a été
+  // annulée faute de paiement. Le badge doit distinguer les deux.
+  const buyerEmail = identity.customer.email;
+  check(
+    "achat vérifié : commande payée contenant le produit",
+    isVerifiedPurchase(state5, p4.id, buyerEmail),
+  );
+  check(
+    "casse et espaces ignorés dans l'e-mail",
+    isVerifiedPurchase(state5, p4.id, `  ${buyerEmail.toUpperCase()} `),
+  );
+  check(
+    "non vérifié : e-mail inconnu",
+    !isVerifiedPurchase(state5, p4.id, "inconnu@example.org"),
+  );
+  check(
+    "non vérifié : bon e-mail, produit jamais commandé",
+    !isVerifiedPurchase(state5, p2.id, buyerEmail),
+  );
+  // orderB contenait bien p5, mais elle a été annulée faute de paiement.
+  check(
+    "non vérifié : la commande contenant le produit a été annulée",
+    !isVerifiedPurchase(state5, p5.id, buyerEmail),
+  );
+  check("non vérifié : aucun e-mail donné", !isVerifiedPurchase(state5, p4.id, ""));
+
+  const verified = await transaction((state) =>
+    createReview(state, {
+      productId: p4.id,
+      author: "Acheteuse",
+      rating: 5,
+      comment: "Très content de cet achat, la finition est nette.",
+      email: buyerEmail,
+    }),
+  );
+  check("avis d'un acheteur : publié et vérifié", !verified.flagged && verified.verified);
+  check(
+    "avis neuf : aucune réponse, aucun vote",
+    verified.reply === null && verified.helpfulYes === 0 && verified.helpfulNo === 0,
+  );
+
+  const anonymous = await transaction((state) =>
+    createReview(state, {
+      productId: p4.id,
+      author: "Passant",
+      rating: 4,
+      comment: "Objet correct pour le prix, rien à redire.",
+    }),
+  );
+  check("avis sans e-mail : publié, non vérifié", !anonymous.flagged && !anonymous.verified);
+
+  // Réponse de la boutique : écrite, puis retirée par un texte vide.
+  await transaction((state) => {
+    const review = state.reviews.find((r) => r.id === verified.id)!;
+    setReviewReply(review, "  Merci beaucoup pour votre retour !  ");
+  });
+  const withReply = (await readState()).reviews.find((r) => r.id === verified.id)!;
+  check(
+    "réponse enregistrée et détourée",
+    withReply.reply?.text === "Merci beaucoup pour votre retour !",
+  );
+  await transaction((state) => {
+    setReviewReply(state.reviews.find((r) => r.id === verified.id)!, "   ");
+  });
+  check(
+    "réponse retirée par un texte vide",
+    (await readState()).reviews.find((r) => r.id === verified.id)!.reply === null,
+  );
+
+  // Votes d'utilité.
+  await transaction((state) => {
+    const review = state.reviews.find((r) => r.id === verified.id)!;
+    voteReviewHelpful(review, true);
+    voteReviewHelpful(review, true);
+    voteReviewHelpful(review, false);
+  });
+  const voted = (await readState()).reviews.find((r) => r.id === verified.id)!;
+  check("votes comptés séparément", voted.helpfulYes === 2 && voted.helpfulNo === 1);
+
+  // Les avis marqués comme spam ne comptent ni dans la liste ni dans la moyenne.
+  const spam = await transaction((state) =>
+    createReview(state, {
+      productId: p4.id,
+      author: "Bot",
+      rating: 1,
+      comment: "Visitez https://exemple-spam.test pour gagner de l'argent facilement.",
+    }),
+  );
+  check("lien détecté comme spam", spam.flagged);
+  const publicList = approvedReviews(await readState(), p4.id);
+  check(
+    "avis spam absent de la liste publique",
+    publicList.length === 2 && !publicList.some((r) => r.id === spam.id),
+  );
 
   console.log(
     failures === 0

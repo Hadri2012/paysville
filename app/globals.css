@@ -1028,6 +1028,56 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
   background: var(--brand);
 }
 
+/* Progression visuelle d'une commande (page de suivi) */
+.order-timeline { list-style: none; margin: 0; padding: 0; }
+.order-step {
+  position: relative;
+  padding: 0 0 18px 26px;
+  border-left: 2px solid var(--line);
+}
+.order-step:last-child { padding-bottom: 0; border-left-color: transparent; }
+.order-step::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: #fff;
+}
+.order-step.is-done { border-left-color: var(--brand); }
+.order-step.is-done::before {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+.order-step.is-current::before {
+  border-color: var(--brand);
+  background: #fff;
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+.order-step.is-upcoming { color: var(--muted); }
+.order-step.is-upcoming strong { font-weight: 500; }
+
+.order-step-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.order-step-desc { color: var(--ink-2); margin-top: 2px; }
+.order-step.is-upcoming .order-step-desc { color: var(--muted); }
+.order-step-note { color: var(--muted); font-style: italic; margin-top: 2px; }
+
+/* Commande annulée ou remboursée : la dernière étape rompt le parcours. */
+.order-timeline-stopped .order-step:last-child::before {
+  border-color: var(--danger);
+  background: var(--danger);
+  box-shadow: none;
+}
+.order-timeline-stopped .order-step:last-child .order-step-desc { color: var(--danger); }
+
 /* -------------------------- Contenu éditorial --------------------------- */
 
 .prose h2 { margin-top: 1.8em; }
@@ -1170,6 +1220,28 @@ dl.kv dd { margin: 0; font-weight: 600; text-align: right; }
   margin-bottom: 6px;
 }
 .review-body { margin: 0; white-space: pre-wrap; line-height: 1.6; }
+
+/* Réponse de la boutique sous un avis */
+.review-reply {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.review-reply .review-body { margin-top: 4px; font-size: 0.93rem; }
+
+/* Votes d'utilité */
+.review-votes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.review-vote-buttons { display: inline-flex; gap: 6px; }
 
 /* Sélecteur d'étoiles du formulaire */
 .rating-picker { border: 0; padding: 0; margin: 0; }

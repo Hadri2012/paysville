@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -93,6 +93,19 @@ function migrate(state: State): State {
         delete review.approved;
         delete review.moderatedAt;
       }
+    }
+  }
+
+  // v4 -> v5 : réponse de la boutique, badge « achat vérifié » et votes d'utilité.
+  // Les avis déjà en base n'ont aucun de ces champs : on leur donne l'état neutre
+  // (pas de réponse, non vérifié, aucun vote). Un ancien avis ne peut pas être
+  // vérifié rétroactivement — l'e-mail de son auteur n'a jamais été conservé.
+  if (state.schemaVersion < 5) {
+    for (const review of state.reviews) {
+      review.verified ??= false;
+      review.reply ??= null;
+      review.helpfulYes ??= 0;
+      review.helpfulNo ??= 0;
     }
   }
 
