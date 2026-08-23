@@ -43,6 +43,13 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-23T20:25:00Z",
+    kind: "correctif",
+    title: "Un code promo à usage unique pouvait être réutilisé",
+    details:
+      "Le code de bienvenue (une remise par client) pouvait être appliqué plusieurs fois par la même personne en ouvrant deux commandes sans attendre la fin du paiement de la première. Un audit ciblé a reproduit puis corrigé la faille : la commande la plus récente compte désormais dès sa création, le temps de son paiement, exactement comme le stock est déjà réservé.",
+  },
+  {
     at: "2026-08-23T20:12:00Z",
     kind: "correctif",
     title: "Trois bugs corrigés : panier, code promo, réservation de stock",
