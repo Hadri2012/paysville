@@ -86,6 +86,12 @@ export const errors = {
       "Cette commande ne peut plus être modifiée. Les modifications ne sont possibles que jusqu'à la préparation.",
       409,
     ),
+  shippingFeeChanged: () =>
+    new AppError(
+      "shipping_fee_changed",
+      "Cette nouvelle adresse changerait les frais de livraison de la commande. Contactez-nous pour ce type de modification.",
+      409,
+    ),
   downloadNotAvailable: () =>
     new AppError(
       "download_not_available",

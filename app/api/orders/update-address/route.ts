@@ -1,6 +1,7 @@
 import { errors } from "@/lib/errors";
 import { handle, jsonOk, limit, readJson } from "@/lib/http";
 import { findOrderByNumber, publicOrderView } from "@/lib/orders";
+import { resolveShipping } from "@/lib/shop";
 import { transaction } from "@/lib/store";
 import { cleanString, parseCheckoutIdentity } from "@/lib/validation";
 import type { OrderAddress } from "@/lib/types";
@@ -32,6 +33,11 @@ export async function POST(request: Request) {
         throw errors.orderNotEditable();
       }
 
+      // Une commande entièrement composée de fichiers n'a rien à expédier : même
+      // règle qu'au checkout, l'adresse y sert seulement de facturation.
+      const digitalOnly =
+        order.items.length > 0 && order.items.every((item) => item.kind === "digital");
+
       // Valide l'adresse de la même façon que lors du checkout.
       const parsed = parseCheckoutIdentity(
         {
@@ -46,7 +52,7 @@ export async function POST(request: Request) {
           city: body.city,
           country: body.country,
         },
-        { requireAddress: true },
+        { requireAddress: !digitalOnly },
       );
 
       const newAddress: OrderAddress = {
@@ -57,6 +63,16 @@ export async function POST(request: Request) {
         city: parsed.address.city,
         country: parsed.address.country,
       };
+
+      // La nouvelle adresse doit rester desservie, et à un tarif de livraison
+      // identique à celui déjà payé — sinon la commande finirait avec une adresse
+      // non livrable, ou des frais de port qui ne correspondent plus à ce qui a
+      // été réglé (voir `resolveShipping`, la même règle qu'au checkout).
+      if (!digitalOnly) {
+        const shipping = resolveShipping(state, newAddress.postalCode, newAddress.city);
+        if (!shipping.covered) throw errors.shippingNotCovered();
+        if (shipping.feeCents !== order.shippingCents) throw errors.shippingFeeChanged();
+      }
 
       order.address = newAddress;
       order.updatedAt = new Date().toISOString();
