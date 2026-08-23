@@ -799,6 +799,59 @@ async function main() {
     }).discountCents > 0,
   );
 
+  // Même course, mais sur la limite GLOBALE (`maxUses`) plutôt que par client :
+  // `promotion.uses` n'est incrémenté qu'à la confirmation du paiement, donc
+  // l'utiliser tel quel pour appliquer `maxUses` laisserait passer autant de
+  // commandes en attente qu'on en crée avant que l'une d'elles ne soit payée.
+  // Reproduit et corrigé en conditions réelles (serveur de dev, appels HTTP
+  // concurrents sur /api/checkout avec un code à maxUses=1 : les quatre
+  // commandes aboutissaient avant le correctif, `uses` finissant à 4).
+  const maxUsesRaceId = await transaction((state) => {
+    const id = newId();
+    state.promotions.push({
+      id,
+      code: "MAXRACE",
+      active: true,
+      type: "percent",
+      value: 10,
+      startsAt: null,
+      endsAt: null,
+      minSubtotalCents: null,
+      maxUses: 1,
+      uses: 0,
+      oncePerCustomer: false,
+      archived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return id;
+  });
+  await transaction((state) => {
+    const q = buildQuote(state, {
+      items: [{ productId: p3.id, quantity: 1 }],
+      promoCode: "MAXRACE",
+      customerEmail: "clienta@example.org",
+      strict: true,
+    });
+    const order = createPendingOrder(state, {
+      quote: q,
+      identity: { ...identity, customer: { ...identity.customer, email: "clienta@example.org" } },
+    });
+    order.promotionId = maxUsesRaceId;
+  });
+  const stateMaxUsesRace = await readState();
+  expectThrows(
+    "maxUses=1 : une commande en attente d'un premier client bloque déjà un second",
+    () =>
+      buildQuote(stateMaxUsesRace, {
+        items: [{ productId: p3.id, quantity: 1 }],
+        promoCode: "MAXRACE",
+        customerEmail: "clientb@example.org",
+        strict: true,
+      }),
+    "invalid_promo",
+  );
+
   console.log("\n== Fichiers numériques : utilitaires ==");
   check("extension lisible", fileExtension("modele-v2.STL") === "STL");
   check("extension absente", fileExtension("sans-extension") === "");

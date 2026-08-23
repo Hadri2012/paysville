@@ -304,6 +304,31 @@ function hasUsedPromotion(state: State, promotionId: string, email: string): boo
 }
 
 /**
+ * Nombre de commandes qui consomment actuellement ce code, tous clients
+ * confondus — le pendant global de `hasUsedPromotion`, pour la limite
+ * `maxUses` plutôt que pour la limite par client.
+ *
+ * `promotion.uses` (le compteur stocké) n'est incrémenté qu'à la confirmation
+ * du paiement : l'utiliser directement pour appliquer `maxUses` laisserait
+ * passer autant de commandes en attente qu'on en crée avant que l'une d'elles
+ * ne soit payée, aucune n'étant encore comptée aux yeux des autres — exactement
+ * la même course que pour un code à usage unique par client, ici sur la limite
+ * globale. Une commande encore en attente compte donc aussi, tant qu'elle n'a
+ * pas expiré ni été annulée ; une commande annulée ou remboursée ne compte
+ * jamais. Même garantie de fraîcheur que `hasUsedPromotion` : n'a de sens
+ * qu'appelée juste après `sweepReservations`.
+ */
+function promotionReservedUses(state: State, promotionId: string): number {
+  return state.orders.filter(
+    (order) =>
+      order.promotionId === promotionId &&
+      (order.paymentStatus === "paid" || order.paymentStatus === "pending") &&
+      order.status !== "canceled" &&
+      order.status !== "refunded",
+  ).length;
+}
+
+/**
  * Valide un code promo côté serveur : existence, activation, dates, minimum
  * d'achat et nombre d'utilisations. Le navigateur ne décide jamais de la remise.
  *
@@ -332,7 +357,10 @@ export function evaluatePromotion(
   if (promotion.endsAt && Date.parse(promotion.endsAt) < now) {
     throw errors.invalidPromo("Ce code promotionnel a expiré.");
   }
-  if (promotion.maxUses !== null && promotion.uses >= promotion.maxUses) {
+  if (
+    promotion.maxUses !== null &&
+    promotionReservedUses(state, promotion.id) >= promotion.maxUses
+  ) {
     throw errors.invalidPromo("Ce code promotionnel a atteint sa limite d'utilisation.");
   }
   if (

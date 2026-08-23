@@ -43,6 +43,13 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-23T21:20:00Z",
+    kind: "correctif",
+    title: "La limite globale d'un code promo pouvait être dépassée",
+    details:
+      "Un code promotionnel limité à un certain nombre d'utilisations au total (pas seulement une par client) pouvait être appliqué à plus de commandes que prévu si plusieurs clients passaient commande au même moment : le compteur ne se met à jour qu'au paiement confirmé, si bien que des commandes encore en attente de paiement n'étaient pas encore comptées les unes par rapport aux autres. Reproduit avec un code limité à un usage et quatre commandes lancées en même temps — les quatre aboutissaient. La limite tient désormais compte des commandes en attente, exactement comme la limite par client.",
+  },
+  {
     at: "2026-08-23T21:05:00Z",
     kind: "correctif",
     title: "Un code promo pouvait sembler « déjà utilisé » après un paiement abandonné",
