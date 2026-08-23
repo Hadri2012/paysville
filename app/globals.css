@@ -670,6 +670,10 @@ hr {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
+@media (max-width: 480px) {
+  .qty button { width: 44px; height: 44px; font-size: 1.15rem; }
+  .qty .value { min-width: 46px; font-size: 1.05rem; }
+}
 
 .summary { position: sticky; top: calc(var(--header-h) + 20px); }
 .summary-row {
