@@ -43,6 +43,20 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-24T14:20:00Z",
+    kind: "nouveaute",
+    title: "Vous êtes prévenu par e-mail à chaque étape de votre commande",
+    details:
+      "Jusqu'ici, suivre une commande demandait de revenir sur le site. Un e-mail part désormais automatiquement à chaque étape franchie : paiement confirmé, mise en préparation, commande prête, expédition, livraison — ainsi qu'en cas d'annulation ou de remboursement.",
+    bullets: [
+      "Le message reprend la charte de la boutique, affiche la progression de la commande, le récapitulatif détaillé et l'adresse de livraison, et s'adapte au téléphone comme à l'ordinateur.",
+      "Quand la boutique ajoute une précision au changement d'étape (numéro de suivi du colis, motif d'annulation), elle apparaît en évidence dans l'e-mail.",
+      "Un seul message par étape, jamais de doublon, même si le paiement est confirmé plusieurs fois par la banque.",
+      "Un panier abandonné à la page de paiement ne déclenche aucun message.",
+      "Nouvelle page « E-mails » dans l'administration, pour voir exactement ce que reçoivent les clients.",
+    ],
+  },
+  {
     at: "2026-08-24T11:40:00Z",
     kind: "nouveaute",
     title: "Retrouver toutes ses commandes, et en repasser une en un clic",

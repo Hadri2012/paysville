@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { notifyOrderStatus } from "./notify";
 import { confirmOrderPayment, releaseOrder, releasePromotionUse, restockOrder } from "./orders";
 import { sweepReservations } from "./shop";
 import { readState, transaction } from "./store";
@@ -10,6 +11,22 @@ export async function applySession(session: Stripe.Checkout.Session): Promise<Or
   const orderId = session.metadata?.orderId;
   if (!orderId) return null;
 
+  const order = await applySessionToState(session, orderId);
+
+  // Confirmation de commande, hors transaction. `notifyOrderStatus` ne l'envoie
+  // qu'une fois : ce chemin est emprunté aussi bien par le webhook Stripe (qui
+  // peut être rejoué) que par la page de confirmation.
+  if (order?.paymentStatus === "paid") {
+    await notifyOrderStatus(order.id, "paid");
+  }
+
+  return order;
+}
+
+async function applySessionToState(
+  session: Stripe.Checkout.Session,
+  orderId: string,
+): Promise<Order | null> {
   return transaction((state) => {
     sweepReservations(state);
     const order = state.orders.find((o) => o.id === orderId);
@@ -76,10 +93,10 @@ export async function syncOrderFromStripe(orderNumber: string): Promise<Order | 
  * ni couper l'accès à des fichiers déjà payés.
  */
 export async function markRefunded(paymentIntent: string, fullyRefunded: boolean): Promise<void> {
-  await transaction((state) => {
+  const refundedId = await transaction((state) => {
     const order = state.orders.find((o) => o.stripePaymentIntentId === paymentIntent);
-    if (!order || order.paymentStatus === "refunded") return;
-    if (!fullyRefunded) return;
+    if (!order || order.paymentStatus === "refunded") return null;
+    if (!fullyRefunded) return null;
 
     // Le stock réservé par cette commande retourne en rayon, et le code promo
     // éventuellement utilisé rend son utilisation — comme lors d'une annulation
@@ -95,7 +112,10 @@ export async function markRefunded(paymentIntent: string, fullyRefunded: boolean
       at: order.updatedAt,
       note: "Remboursement confirmé par Stripe.",
     });
+    return order.id;
   });
+
+  if (refundedId) await notifyOrderStatus(refundedId, "refunded");
 }
 
 export async function markPaymentFailed(orderId: string, reason: string): Promise<void> {

@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -136,6 +136,17 @@ function migrate(state: State): State {
       for (const item of order.items) {
         item.kind ??= "physical";
       }
+    }
+  }
+
+  // v7 -> v8 : e-mails de suivi de commande. Les commandes déjà en base sont
+  // marquées comme ayant DÉJÀ été notifiées pour l'étape où elles en sont : sans
+  // cela, la mise à jour enverrait d'un coup une notification pour chaque
+  // commande en cours — y compris « votre colis est parti » pour des colis
+  // partis depuis des semaines.
+  if (state.schemaVersion < 8) {
+    for (const order of state.orders) {
+      order.notifiedStatuses ??= [...new Set(order.statusHistory.map((e) => e.status))];
     }
   }
 

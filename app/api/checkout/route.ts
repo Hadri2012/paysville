@@ -1,5 +1,6 @@
 import { assertSameOrigin, handle, jsonOk, limit, limitGlobal, readJson, siteUrl } from "@/lib/http";
 import { errors } from "@/lib/errors";
+import { notifyOrderStatus } from "@/lib/notify";
 import { confirmOrderPayment, createPendingOrder, releaseOrder } from "@/lib/orders";
 import { buildQuote, sweepReservations } from "@/lib/shop";
 import { readState, transaction } from "@/lib/store";
@@ -91,6 +92,10 @@ export async function POST(request: Request) {
         sweepReservations(state);
         confirmOrderPayment(state, order.id, {});
       });
+      // Ce chemin ne passe pas par `applySession` : sans cet appel, la
+      // confirmation de commande partirait en production mais jamais en test,
+      // c'est-à-dire précisément là où on la vérifie.
+      await notifyOrderStatus(order.id, "paid");
       return jsonOk({
         url: `/confirmation?commande=${encodeURIComponent(order.number)}&token=${encodeURIComponent(order.accessToken)}`,
         orderNumber: order.number,

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SHOP_MONOGRAM } from "@/lib/brand";
 
 export function SiteFooter({ contactEmail }: { contactEmail?: string }) {
   const year = new Date().getFullYear();
@@ -9,7 +10,7 @@ export function SiteFooter({ contactEmail }: { contactEmail?: string }) {
           <div>
             <Link href="/" className="logo" style={{ marginBottom: 10 }}>
               <span className="logo-mark" aria-hidden="true">
-                HS
+                {SHOP_MONOGRAM}
               </span>
               Hadrishop
             </Link>

@@ -141,6 +141,15 @@ export interface Order {
   /** Renseigné si le stock n'a pas pu être décrémenté correctement (à traiter manuellement). */
   stockWarning: string | null;
   adminNote: string;
+  /**
+   * Étapes pour lesquelles un e-mail a déjà été envoyé au client.
+   *
+   * Réservé dans la transaction qui fait changer l'état, donc au plus une fois
+   * par étape même si deux webhooks Stripe arrivent ensemble. Recevoir deux fois
+   * « votre colis est parti » ferait douter de la commande ; c'est ce que ce
+   * garde-fou empêche.
+   */
+  notifiedStatuses: OrderStatus[];
 }
 
 export interface Promotion {

@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
+import { notifyOrderStatus } from "@/lib/notify";
 import { releasePromotionUse, restockOrder, setOrderStatus } from "@/lib/orders";
 import { transaction } from "@/lib/store";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/types";
@@ -18,6 +19,10 @@ export async function PATCH(request: Request, context: Context) {
     await requireAdmin();
     const { id } = await context.params;
     const body = await readJson(request);
+
+    // Renseigné quand ce PATCH fait réellement changer d'étape : c'est ce qui
+    // déclenche l'e-mail au client, une fois la transaction validée.
+    let reached: { status: OrderStatus; note: string } | null = null;
 
     const order = await transaction((state) => {
       const found = state.orders.find((o) => o.id === id);
@@ -51,16 +56,27 @@ export async function PATCH(request: Request, context: Context) {
             found.paymentStatus = "canceled";
           }
           if (status === "refunded") found.paymentStatus = "refunded";
+          const note = cleanString(body.statusNote, 200);
           setOrderStatus(
             state.orders.find((o) => o.id === id)!,
             status,
-            cleanString(body.statusNote, 200) || "Statut modifié depuis l'administration.",
+            note || "Statut modifié depuis l'administration.",
           );
+          reached = { status, note };
         }
       }
 
       return found;
     });
+
+    // Après validation de la transaction : l'e-mail ne doit partir que si le
+    // changement d'étape est bien enregistré. La note de la boutique (numéro de
+    // suivi, motif) accompagne le message quand elle a été saisie ; la phrase de
+    // repli, elle, ne dit rien au client et reste interne.
+    if (reached) {
+      const { status, note } = reached as { status: OrderStatus; note: string };
+      await notifyOrderStatus(id, status, note);
+    }
 
     return jsonOk({ order });
   });

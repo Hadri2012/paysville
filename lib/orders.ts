@@ -75,6 +75,9 @@ export function createPendingOrder(state: State, input: CreateOrderInput): Order
     },
     stockWarning: null,
     adminNote: "",
+    // « En attente de paiement » ne déclenche aucun e-mail : le client vient de
+    // quitter la boutique pour la page de paiement, lui écrire n'apprendrait rien.
+    notifiedStatuses: [],
   };
 
   state.orders.push(order);

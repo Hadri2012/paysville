@@ -93,18 +93,6 @@ export function limitGlobal(scope: string, max: number, windowMs: number): void 
   }
 }
 
-/** URL publique du site, utilisée pour les redirections Stripe. */
-export function siteUrl(request?: Request): string {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
-  if (configured) return configured.replace(/\/+$/, "");
-  if (request) {
-    const host = request.headers.get("host");
-    if (host) {
-      const proto =
-        request.headers.get("x-forwarded-proto") ||
-        (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-      return `${proto}://${host}`;
-    }
-  }
-  return "http://localhost:3000";
-}
+// Réexport : `siteUrl` vit dans son propre module pour rester utilisable
+// depuis du code qui ne doit pas dépendre de `next/server` (voir lib/siteUrl.ts).
+export { siteUrl } from "./siteUrl";

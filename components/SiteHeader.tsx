@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useCart } from "./CartProvider";
 import { useFavorites } from "./FavoritesProvider";
+import { SHOP_MONOGRAM } from "@/lib/brand";
 
 const LINKS = [
   { href: "/", label: "Accueil" },
@@ -37,7 +38,7 @@ export function SiteHeader() {
       <div className="container header-inner">
         <Link href="/" className="logo" aria-label="Hadrishop — accueil">
           <span className="logo-mark" aria-hidden="true">
-            HS
+            {SHOP_MONOGRAM}
           </span>
           Hadrishop
         </Link>

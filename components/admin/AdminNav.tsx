@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { SHOP_MONOGRAM } from "@/lib/brand";
 
 const LINKS = [
   { href: "/admin", label: "Tableau de bord", exact: true },
@@ -12,6 +13,7 @@ const LINKS = [
   { href: "/admin/promotions", label: "Promotions" },
   { href: "/admin/avis", label: "Avis clients" },
   { href: "/admin/livraison", label: "Livraison" },
+  { href: "/admin/emails", label: "E-mails" },
   { href: "/admin/parametres", label: "Paramètres" },
 ];
 
@@ -35,7 +37,7 @@ export function AdminNav({ email }: { email: string }) {
     <aside className="admin-side">
       <Link href="/admin" className="logo">
         <span className="logo-mark" aria-hidden="true">
-          HS
+          {SHOP_MONOGRAM}
         </span>
         Hadrishop
       </Link>

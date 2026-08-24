@@ -13,13 +13,16 @@ import {
   orderDownloads,
 } from "../lib/digital";
 import { applyAdditions, type CartLine } from "../lib/cart";
+import { NOTIFIED_STATUSES, renderOrderEmail } from "../lib/email/orderEmails";
 import { customerOrderHistory, isReorderable } from "../lib/history";
 import { newId } from "../lib/ids";
+import { notifyOrderStatus } from "../lib/notify";
 import {
   MIN_RESERVATION_MINUTES,
   confirmOrderPayment,
   createPendingOrder,
   publicOrderView,
+  setOrderStatus,
 } from "../lib/orders";
 import { markRefunded } from "../lib/payments";
 import { cartSuggestions, scoreCandidates } from "../lib/recommendations";
@@ -1341,6 +1344,97 @@ async function main() {
     // Le panier d'origine ne doit jamais être modifié sur place : la vue React
     // qui le détient repose sur un remplacement, pas sur une mutation.
     check("ajout groupé : panier d'origine intact", already[0].quantity === 1);
+  }
+
+  console.log("\n== E-mails de suivi de commande ==");
+  {
+    const mailState = await readState();
+    const mailOrder = mailState.orders.find((o) => o.id === orderA.id)!;
+
+    for (const status of NOTIFIED_STATUSES) {
+      const message = renderOrderEmail(
+        { order: mailOrder, settings: mailState.settings, siteUrl: "https://exemple.be" },
+        status,
+      );
+      const ok =
+        message.to === mailOrder.customer.email &&
+        message.subject.includes(mailOrder.number) &&
+        message.html.includes("<!DOCTYPE html") &&
+        message.html.includes(mailOrder.number) &&
+        message.text.includes(mailOrder.number) &&
+        message.text.length > 80;
+      check(`e-mail « ${status} » : objet, HTML et texte complets`, ok, message.subject);
+    }
+
+    // Le message reprend des données saisies (nom d'article, note de la
+    // boutique). Sans échappement, un chevron casserait la mise en page — et un
+    // contenu hostile injecterait du balisage dans un message signé Hadrishop.
+    const hostile = JSON.parse(JSON.stringify(mailOrder)) as typeof mailOrder;
+    hostile.items[0].name = `<script>alert("x")</script>`;
+    hostile.customer.firstName = `<b>Éve</b>`;
+    const escaped = renderOrderEmail(
+      {
+        order: hostile,
+        settings: mailState.settings,
+        siteUrl: "https://exemple.be",
+        note: `<img src=x onerror="alert(1)">`,
+      },
+      "shipped",
+    );
+    check(
+      "e-mail : aucune balise injectée par les données de la commande",
+      !escaped.html.includes("<script>") &&
+        !escaped.html.includes("<img src=x") &&
+        !escaped.html.includes("<b>Éve</b>") &&
+        escaped.html.includes("&lt;script&gt;"),
+    );
+
+    // La frise ne promet pas une suite qui n'arrivera pas.
+    const stopped = renderOrderEmail(
+      { order: mailOrder, settings: mailState.settings, siteUrl: "https://exemple.be" },
+      "canceled",
+    );
+    check(
+      "e-mail « annulée » : aucune frise de progression",
+      !stopped.html.includes("Expédiée") && !stopped.html.includes("Livrée"),
+    );
+
+    // Au plus un envoi par étape, quel que soit le nombre d'appels : c'est ce
+    // qui protège d'un webhook Stripe rejoué.
+    const first = await notifyOrderStatus(orderA.id, "shipped", "Colis confié à bpost.");
+    const second = await notifyOrderStatus(orderA.id, "shipped", "Colis confié à bpost.");
+    check(
+      "notification envoyée une fois, la seconde ignorée",
+      first !== "skipped" && second === "skipped",
+      `${first} puis ${second}`,
+    );
+    check(
+      "l'étape notifiée est enregistrée sur la commande",
+      (await readState()).orders
+        .find((o) => o.id === orderA.id)!
+        .notifiedStatuses.includes("shipped"),
+    );
+
+    // Un panier abandonné n'est pas une nouvelle à annoncer.
+    const abandoned = await transaction((state) => {
+      const quote = buildQuote(state, {
+        items: [{ productId: state.products.find((p) => p.sku === "P11")!.id, quantity: 1 }],
+        postalCode: "1435",
+        city: "Corbais",
+      });
+      const created = createPendingOrder(state, { quote, identity });
+      setOrderStatus(created, "canceled", "Session de paiement expirée.");
+      return created.id;
+    });
+    check(
+      "commande jamais payée puis expirée : aucun e-mail",
+      (await notifyOrderStatus(abandoned, "canceled")) === "skipped",
+    );
+
+    check(
+      "étape silencieuse : aucun e-mail en attente de paiement",
+      (await notifyOrderStatus(orderA.id, "awaiting_payment")) === "skipped",
+    );
   }
 
   const refunded = await transaction((state) => {
