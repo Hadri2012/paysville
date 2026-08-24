@@ -12,6 +12,8 @@ import {
   isDigitalOnly,
   orderDownloads,
 } from "../lib/digital";
+import { applyAdditions, type CartLine } from "../lib/cart";
+import { customerOrderHistory, isReorderable } from "../lib/history";
 import { newId } from "../lib/ids";
 import {
   MIN_RESERVATION_MINUTES,
@@ -1179,6 +1181,168 @@ async function main() {
     state11.products.find((p) => p.id === digitalId)?.stock === 0,
   );
 
+  console.log("\n== Historique des commandes et reprise ==");
+  // Commande dédiée, sur un produit qu'aucun autre contrôle ne touche : la
+  // reprise doit être jugée sur le catalogue d'aujourd'hui, pas sur celui du
+  // jour de la commande.
+  const historyOrder = await transaction((state) => {
+    const product = state.products.find((p) => p.sku === "P10")!;
+    const quote = buildQuote(state, {
+      items: [{ productId: product.id, quantity: 2 }],
+      postalCode: "1435",
+      city: "Corbais",
+    });
+    return createPendingOrder(state, { quote, identity });
+  });
+
+  const stateHistory = await readState();
+  const entries = customerOrderHistory(stateHistory, identity.customer.email);
+  check("historique non vide pour l'e-mail du client", entries.length > 0);
+  check(
+    "commandes triées de la plus récente à la plus ancienne",
+    entries.every(
+      (entry, index) => index === 0 || entries[index - 1].createdAt >= entry.createdAt,
+    ),
+  );
+  check(
+    "casse et espaces ignorés dans l'e-mail",
+    customerOrderHistory(stateHistory, "  TEST@Example.ORG  ").length === entries.length,
+  );
+  check(
+    "e-mail inconnu : historique vide",
+    customerOrderHistory(stateHistory, "inconnu@example.org").length === 0,
+  );
+  check("e-mail vide : historique vide", customerOrderHistory(stateHistory, "  ").length === 0);
+
+  // Le résumé élargit ce qui est visible avec une seule preuve (numéro +
+  // e-mail) : il ne doit donc porter que de quoi reconnaître et reprendre une
+  // commande. Adresse, téléphone, jeton d'accès et liens de téléchargement
+  // restent derrière la consultation d'une commande précise.
+  const exposed = new Set(Object.keys(entries[0]));
+  check(
+    "le résumé n'expose ni adresse, ni client, ni jeton, ni téléchargement",
+    !["address", "customer", "accessToken", "downloads", "note", "statusHistory"].some(
+      (key) => exposed.has(key),
+    ),
+    [...exposed].join(", "),
+  );
+
+  const physicalEntry = entries.find((entry) => entry.number === historyOrder.number)!;
+  check(
+    "nombre d'exemplaires additionné",
+    physicalEntry.itemCount === 2,
+    `${physicalEntry.itemCount}`,
+  );
+  check(
+    "article encore vendable : reprenable, borné au stock restant",
+    physicalEntry.canReorder &&
+      isReorderable(physicalEntry.items[0]) &&
+      physicalEntry.items[0].available === 1,
+    `available=${physicalEntry.items[0].available}`,
+  );
+
+  // Produit retiré du catalogue après l'achat : la ligne reste lisible dans
+  // l'historique, mais « Recommander » ne doit plus la proposer.
+  await transaction((state) => {
+    state.products.find((p) => p.sku === "P10")!.archived = true;
+  });
+  const archivedEntry = customerOrderHistory(
+    await readState(),
+    identity.customer.email,
+  ).find((entry) => entry.number === historyOrder.number)!;
+  check(
+    "produit retiré du catalogue : ligne non reprenable",
+    archivedEntry.items[0].available === 0 &&
+      !isReorderable(archivedEntry.items[0]) &&
+      !archivedEntry.canReorder,
+  );
+  await transaction((state) => {
+    state.products.find((p) => p.sku === "P10")!.archived = false;
+  });
+
+  // Fichier déjà acquis : le racheter ne donnerait rien de plus, le
+  // téléchargement restant ouvert depuis le suivi.
+  const paidDigitalEntry = customerOrderHistory(
+    await readState(),
+    identity.customer.email,
+  ).find((entry) => entry.number === digitalOrder.number)!;
+  check(
+    "fichier déjà téléchargeable : marqué et non reprenable",
+    paidDigitalEntry.items[0].alreadyOwned &&
+      !isReorderable(paidDigitalEntry.items[0]) &&
+      !paidDigitalEntry.canReorder,
+  );
+
+  // Reprise au panier : c'est ici que la promesse du bouton se tient ou se
+  // trompe. Le plafond porte sur le total obtenu, panier compris, et le compte
+  // rendu porte sur des exemplaires — pas sur des lignes traitées.
+  {
+    const empty: CartLine[] = [];
+    const twoOfOne = applyAdditions(empty, [{ productId: "a", quantity: 2 }], 20);
+    check(
+      "ajout groupé : deux exemplaires comptés comme deux",
+      twoOfOne.added === 2 && twoOfOne.capped === 0 && twoOfOne.items[0].quantity === 2,
+      JSON.stringify(twoOfOne),
+    );
+
+    const shortStock = applyAdditions(empty, [{ productId: "a", quantity: 2, max: 1 }], 20);
+    check(
+      "ajout groupé : quantité ramenée au stock, et signalée",
+      shortStock.added === 1 && shortStock.capped === 1,
+      JSON.stringify(shortStock),
+    );
+
+    // Le cas qui a motivé la distinction : deux lignes, dont une bornée par le
+    // stock. Compter les lignes annoncerait « 2 articles » pour 2 exemplaires
+    // là où la commande en portait 3.
+    const mixed = applyAdditions(
+      empty,
+      [
+        { productId: "a", quantity: 2, max: 1 },
+        { productId: "b", quantity: 1, max: 5 },
+      ],
+      20,
+    );
+    check(
+      "ajout groupé : exemplaires comptés, pas lignes",
+      mixed.added === 2 && mixed.capped === 1 && mixed.items.length === 2,
+      JSON.stringify(mixed),
+    );
+
+    // Le plafond tient compte de ce qui est déjà au panier : sans cela,
+    // recommander deux fois de suite dépasserait le stock réel.
+    const already: CartLine[] = [{ productId: "a", quantity: 1 }];
+    const again = applyAdditions(already, [{ productId: "a", quantity: 2, max: 1 }], 20);
+    check(
+      "ajout groupé : rien de plus quand le stock est déjà atteint au panier",
+      again.added === 0 && again.capped === 1 && again.items === already,
+      JSON.stringify(again),
+    );
+
+    const partial = applyAdditions(already, [{ productId: "a", quantity: 5, max: 3 }], 20);
+    check(
+      "ajout groupé : complète jusqu'au stock disponible",
+      partial.added === 2 && partial.items[0].quantity === 3,
+      JSON.stringify(partial),
+    );
+
+    const soldOut = applyAdditions(empty, [{ productId: "a", quantity: 1, max: 0 }], 20);
+    check(
+      "ajout groupé : rien pour un article en rupture",
+      soldOut.added === 0 && soldOut.capped === 1 && soldOut.items.length === 0,
+    );
+
+    const overall = applyAdditions(empty, [{ productId: "a", quantity: 50 }], 20);
+    check(
+      "ajout groupé : plafond général du panier respecté",
+      overall.added === 20 && overall.capped === 1,
+    );
+
+    // Le panier d'origine ne doit jamais être modifié sur place : la vue React
+    // qui le détient repose sur un remplacement, pas sur une mutation.
+    check("ajout groupé : panier d'origine intact", already[0].quantity === 1);
+  }
+
   const refunded = await transaction((state) => {
     const order = state.orders.find((o) => o.id === digitalOrder.id)!;
     order.status = "refunded";
@@ -1189,6 +1353,16 @@ async function main() {
     "commande remboursée : accès révoqué",
     orderDownloads(await readState(), refunded).length === 0,
   );
+  // Corollaire côté historique : l'accès révoqué rend le fichier rachetable.
+  const refundedEntry = customerOrderHistory(
+    await readState(),
+    identity.customer.email,
+  ).find((entry) => entry.number === digitalOrder.number)!;
+  check(
+    "accès révoqué : le fichier redevient reprenable",
+    !refundedEntry.items[0].alreadyOwned && refundedEntry.canReorder,
+  );
+
   await deleteAsset(digitalAssetId);
 
   console.log(

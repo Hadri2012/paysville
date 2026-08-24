@@ -9,17 +9,22 @@ import {
   useRef,
   useState,
 } from "react";
+import { applyAdditions, type CartAddition, type CartAdditionResult } from "@/lib/cart";
 
 export interface CartItem {
   productId: string;
   quantity: number;
 }
 
+export type { CartAddition, CartAdditionResult } from "@/lib/cart";
+
 interface CartContextValue {
   items: CartItem[];
   count: number;
   hydrated: boolean;
   add: (productId: string, quantity?: number, label?: string, max?: number) => void;
+  /** Ajoute plusieurs lignes d'un coup. Renvoie ce qui a réellement été ajouté. */
+  addMany: (additions: CartAddition[]) => CartAdditionResult;
   setQuantity: (productId: string, quantity: number) => void;
   remove: (productId: string) => void;
   clear: () => void;
@@ -131,6 +136,24 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [notify],
   );
 
+  /**
+   * Ajout groupé, pour reprendre une commande entière en un clic.
+   *
+   * Répéter `add()` produirait un message par article, chacun masquant le
+   * précédent : le client lirait « X ajouté au panier » pour une commande de
+   * quatre lignes. Ici le calcul est fait d'un bloc, sur l'état courant, et
+   * c'est l'appelant qui annonce le résultat — lui seul sait ce qui a été
+   * écarté, et pourquoi.
+   */
+  const addMany = useCallback(
+    (additions: CartAddition[]): CartAdditionResult => {
+      const result = applyAdditions(items, additions, MAX_QTY);
+      if (result.added > 0) setItems(result.items);
+      return result;
+    },
+    [items],
+  );
+
   const setQuantity = useCallback((productId: string, quantity: number) => {
     setItems((current) => {
       if (quantity <= 0) return current.filter((item) => item.productId !== productId);
@@ -169,12 +192,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       count: items.reduce((sum, item) => sum + item.quantity, 0),
       hydrated,
       add,
+      addMany,
       setQuantity,
       remove,
       clear,
       notify,
     }),
-    [items, hydrated, add, setQuantity, remove, clear, notify],
+    [items, hydrated, add, addMany, setQuantity, remove, clear, notify],
   );
 
   return (

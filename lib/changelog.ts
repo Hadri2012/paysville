@@ -43,6 +43,19 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-24T11:40:00Z",
+    kind: "nouveaute",
+    title: "Retrouver toutes ses commandes, et en repasser une en un clic",
+    details:
+      "La page de suivi ne montrait qu'une commande à la fois, celle dont on tapait le numéro. Elle affiche désormais, sous le détail, la liste de toutes les commandes passées avec la même adresse e-mail — et permet d'en remettre le contenu au panier d'un seul bouton.",
+    bullets: [
+      "Recherche par numéro de commande ou par nom d'article, filtre par statut (en cours, livrées, annulées) et tri par date ou par montant.",
+      "« Recommander » remet au panier ce qui est encore disponible, en ajustant les quantités au stock du moment et en disant clairement ce qui n'a pas pu suivre.",
+      "Un article retiré du catalogue, ou un fichier déjà téléchargeable depuis la commande, n'est pas proposé au rachat.",
+      "L'accès reste protégé comme avant : il faut toujours un numéro de commande ET l'adresse e-mail correspondante, et la liste ne montre ni adresse, ni téléphone, ni lien de téléchargement.",
+    ],
+  },
+  {
     at: "2026-08-24T08:05:00Z",
     kind: "amelioration",
     title: "Les avis clients influencent désormais les suggestions",
