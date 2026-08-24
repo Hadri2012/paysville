@@ -2,7 +2,7 @@ import { timingSafeEqual } from "crypto";
 import { readAsset } from "@/lib/assets";
 import { orderDownloads } from "@/lib/digital";
 import { errors } from "@/lib/errors";
-import { jsonError, limit } from "@/lib/http";
+import { jsonError, limit, limitGlobal } from "@/lib/http";
 import { findOrderByNumber } from "@/lib/orders";
 import { readState } from "@/lib/store";
 import { cleanString } from "@/lib/validation";
@@ -29,6 +29,11 @@ export async function GET(request: Request): Promise<Response> {
   // succès est un flux binaire. Les erreurs, elles, restent au format habituel.
   try {
     limit(request, "download", 60, 60_000);
+    // Filet global : le jeton d'accès n'est pas devinable (impossible à
+    // brute-forcer, contrairement à un numéro de commande), mais changer
+    // d'adresse IP prétendue à chaque appel épuiserait sinon la bande passante
+    // sans jamais être ralenti (voir `limitGlobal`).
+    limitGlobal("download", 600, 60_000);
 
     const url = new URL(request.url);
     const number = cleanString(url.searchParams.get("commande"), 40);

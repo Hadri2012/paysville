@@ -1,4 +1,4 @@
-import { assertSameOrigin, handle, jsonOk, limit, readJson, siteUrl } from "@/lib/http";
+import { assertSameOrigin, handle, jsonOk, limit, limitGlobal, readJson, siteUrl } from "@/lib/http";
 import { errors } from "@/lib/errors";
 import { confirmOrderPayment, createPendingOrder, releaseOrder } from "@/lib/orders";
 import { buildQuote, sweepReservations } from "@/lib/shop";
@@ -19,6 +19,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   return handle(async () => {
     limit(request, "checkout", 10, 60_000);
+    // Filet global, non contournable en changeant d'adresse IP prétendue à
+    // chaque tentative (voir `limitGlobal`).
+    limitGlobal("checkout", 100, 60_000);
     assertSameOrigin(request);
 
     const body = await readJson(request);

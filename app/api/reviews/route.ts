@@ -1,5 +1,5 @@
 import { errors } from "@/lib/errors";
-import { assertSameOrigin, handle, jsonOk, limit, readJson } from "@/lib/http";
+import { assertSameOrigin, handle, jsonOk, limit, limitGlobal, readJson } from "@/lib/http";
 import { createReview, sanitizeReviewPhotos } from "@/lib/reviews";
 import { transaction } from "@/lib/store";
 import { cleanString, toInt } from "@/lib/validation";
@@ -17,6 +17,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   return handle(async () => {
     limit(request, "review", 5, 10 * 60_000);
+    // Filet global : sans lui, changer d'adresse IP prétendue à chaque dépôt
+    // permet de gonfler l'état sans fin (voir `limitGlobal`).
+    limitGlobal("review", 50, 10 * 60_000);
     assertSameOrigin(request);
 
     const body = await readJson(request);

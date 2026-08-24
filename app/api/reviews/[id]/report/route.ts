@@ -1,5 +1,5 @@
 import { errors } from "@/lib/errors";
-import { assertSameOrigin, handle, jsonOk, limit, readJson } from "@/lib/http";
+import { assertSameOrigin, handle, jsonOk, limit, limitGlobal, readJson } from "@/lib/http";
 import { reportReview } from "@/lib/reviews";
 import { transaction } from "@/lib/store";
 
@@ -13,11 +13,14 @@ type Context = { params: Promise<{ id: string }> };
  * Le signalement ne masque rien : il place l'avis en tête de la file dans
  * l'administration, où la boutique tranche. Laisser un compteur décider seul du
  * retrait offrirait à quiconque insiste un moyen d'effacer un avis gênant mais
- * légitime. La limite de débit est basse — signaler est un geste rare.
+ * légitime. La limite de débit est basse — signaler est un geste rare. Le filet
+ * global (voir `limitGlobal`) empêche de noyer la file de modération en changeant
+ * d'adresse IP prétendue à chaque signalement.
  */
 export async function POST(request: Request, context: Context) {
   return handle(async () => {
     limit(request, "review-report", 5, 10 * 60_000);
+    limitGlobal("review-report", 50, 10 * 60_000);
     assertSameOrigin(request);
 
     const { id } = await context.params;

@@ -142,6 +142,22 @@ async function main() {
       allowed === 10,
     );
   }
+  // `limitGlobal` (lib/http.ts) suit exactement ce principe pour les points
+  // d'accès sans cible identifiable (checkout, dépôt/vote/signalement d'avis,
+  // téléchargement) : une seule clé fixe (`global:<scope>`), partagée par tous
+  // les appelants, plafonne le volume total quel que soit le nombre d'adresses
+  // IP prétendues différentes.
+  {
+    const globalKey = `global:selftest-checkout`;
+    let allowed = 0;
+    for (let i = 0; i < 120; i++) {
+      if (rateLimit(globalKey, 100, 60_000)) allowed += 1;
+    }
+    check(
+      "rateLimit sur une clé globale : plafonne le volume total, tous appelants confondus",
+      allowed === 100,
+    );
+  }
 
   console.log("\n== Catalogue initial ==");
   const state0 = await readState();

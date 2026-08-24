@@ -43,6 +43,17 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-24T07:10:00Z",
+    kind: "amelioration",
+    title: "Audit de sécurité : protection étendue et politique de contenu",
+    details:
+      "Un audit dédié a passé en revue l'authentification, les autorisations, l'exposition des données et la gestion des secrets. Deux renforcements en résultent.",
+    bullets: [
+      "La protection déjà apportée à la connexion et au suivi de commande contre les tentatives réparties sur de fausses adresses IP s'étend désormais au paiement, au dépôt d'avis, aux votes, aux signalements et au téléchargement de fichiers.",
+      "Une politique de sécurité du contenu (Content-Security-Policy) limite désormais ce que le navigateur peut charger sur chaque page, en complément des protections déjà en place.",
+    ],
+  },
+  {
     at: "2026-08-24T06:55:00Z",
     kind: "correctif",
     title: "Adresse impossible à corriger sur une commande de fichiers",

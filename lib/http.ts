@@ -75,6 +75,24 @@ export function limitKey(key: string, max: number, windowMs: number): void {
   }
 }
 
+/**
+ * Plafond global, tous appelants confondus, pour un point d'accès public sans
+ * secret à deviner (checkout, dépôt/vote/signalement d'avis, téléchargement) :
+ * `limitKey` n'y a pas de cible évidente à identifier, mais `limit()` seul
+ * reste contournable en changeant d'adresse IP prétendue à chaque requête (même
+ * faille que celle qui a introduit `limitKey`). Sans ce filet, un abus reparti
+ * sur de fausses IP peut gonfler l'état sans fin (avis, commandes) ou saturer
+ * la bande passante, sans jamais être ralenti par une limite censée s'appliquer.
+ * Le plafond est fixé large — un multiple de la limite par IP — pour ne gêner
+ * aucun usage légitime, y compris un pic de plusieurs client·e·s à la fois ; il
+ * ne vise que l'automatisation à grande échelle.
+ */
+export function limitGlobal(scope: string, max: number, windowMs: number): void {
+  if (!rateLimit(`global:${scope}`, max, windowMs)) {
+    throw errors.rateLimited();
+  }
+}
+
 /** URL publique du site, utilisée pour les redirections Stripe. */
 export function siteUrl(request?: Request): string {
   const configured = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
