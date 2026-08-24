@@ -1,3 +1,4 @@
+import { reviewSummaries, type ReviewSummary } from "./reviews";
 import { listPublicProducts, type PublicProduct } from "./shop";
 import type { State } from "./types";
 
@@ -8,13 +9,36 @@ import type { State } from "./types";
  *
  *  1. **Un score local**, toujours actif, sans configuration ni appel réseau. Il
  *     combine ce que la boutique sait déjà : catégorie commune, proximité de prix,
- *     et surtout les achats conjoints réellement observés dans les commandes payées.
+ *     les achats conjoints réellement observés dans les commandes payées, et la
+ *     note moyenne des avis publiés (« vous avez aimé »).
  *  2. **Une couche Claude facultative** (`lib/aiRecommendations.ts`), qui réordonne
  *     ces candidats et rédige une phrase d'accroche par produit. Elle ne s'active
  *     que si `ANTHROPIC_API_KEY` est renseignée ; sinon on sert le score local tel
  *     quel. C'est ce qui rendra les suggestions plus fines à mesure que le
  *     catalogue s'étoffe, sans jamais bloquer l'affichage de la page.
  */
+
+/**
+ * En dessous, une note ne dit encore rien : un unique avis à 5 étoiles ne doit pas
+ * propulser un produit devant tout le reste. Même seuil de confiance que le résumé
+ * des avis les plus cités (`lib/reviews.ts#MIN_REVIEWS_FOR_THEMES`).
+ */
+const MIN_REVIEWS_FOR_RATING_BONUS = 3;
+
+/**
+ * Points ajoutés (ou retirés) selon la note moyenne du produit, à confiance égale
+ * avec les autres critères : un produit plébiscité mérite d'être davantage mis en
+ * avant, un produit mal noté ne devrait pas l'être malgré une catégorie ou un prix
+ * qui coïncident.
+ */
+function ratingBonus(summary: ReviewSummary | undefined): number {
+  if (!summary || summary.average === null) return 0;
+  if (summary.count < MIN_REVIEWS_FOR_RATING_BONUS) return 0;
+  if (summary.average >= 4.5) return 4;
+  if (summary.average >= 4) return 2;
+  if (summary.average < 3) return -4;
+  return 0;
+}
 
 export interface Suggestion {
   product: PublicProduct;
@@ -48,6 +72,7 @@ function coPurchaseCounts(state: State, productId: string): Map<string, number> 
  */
 export function scoreCandidates(state: State, current: PublicProduct): PublicProduct[] {
   const together = coPurchaseCounts(state, current.id);
+  const ratings = reviewSummaries(state);
 
   return listPublicProducts(state)
     .filter((candidate) => candidate.id !== current.id)
@@ -65,6 +90,9 @@ export function scoreCandidates(state: State, current: PublicProduct): PublicPro
       const gap = Math.abs(candidate.priceCents - current.priceCents) / reference;
       if (gap <= 0.25) score += 3;
       else if (gap <= 0.6) score += 1;
+
+      // Bien noté par de vrais clients : « vous avez aimé ».
+      score += ratingBonus(ratings.get(candidate.id));
 
       // Un produit en rupture ne peut pas être ajouté au panier : on le rétrograde
       // sans l'exclure, pour garder de quoi remplir la liste sur un petit catalogue.
@@ -120,10 +148,13 @@ export function cartSuggestions(
     }
   }
 
+  const ratings = reviewSummaries(state);
+
   return listPublicProducts(state)
     .filter((product) => !inCart.has(product.id) && product.inStock)
     .map((product) => {
       let score = (together.get(product.id) ?? 0) * 10;
+      score += ratingBonus(ratings.get(product.id));
       if (product.category && categories.has(product.category)) score += 5;
       // Un petit complément s'ajoute plus volontiers qu'un second gros achat.
       if (product.priceCents <= 500) score += 2;

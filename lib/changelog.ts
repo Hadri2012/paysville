@@ -43,6 +43,13 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-24T08:05:00Z",
+    kind: "amelioration",
+    title: "Les avis clients influencent désormais les suggestions",
+    details:
+      "Les suggestions « Vous aimerez aussi » et « Complétez votre panier » tenaient déjà compte des achats réellement faits ensemble, de la catégorie et du prix. Elles tiennent désormais compte aussi de la note moyenne des avis publiés : à critères égaux, un produit plébiscité par les clients passe devant un produit mal noté ou sans avis. Il faut au moins trois avis pour qu'une note pèse dans le classement, pour ne pas laisser un avis isolé fausser la suggestion.",
+  },
+  {
     at: "2026-08-24T07:10:00Z",
     kind: "amelioration",
     title: "Audit de sécurité : protection étendue et politique de contenu",

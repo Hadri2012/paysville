@@ -20,7 +20,7 @@ import {
   publicOrderView,
 } from "../lib/orders";
 import { markRefunded } from "../lib/payments";
-import { cartSuggestions } from "../lib/recommendations";
+import { cartSuggestions, scoreCandidates } from "../lib/recommendations";
 import { rateLimit } from "../lib/ratelimit";
 import {
   approvedReviews,
@@ -709,6 +709,44 @@ async function main() {
     `${suggested.length}`,
   );
   check("panier vide : aucune suggestion", cartSuggestions(state7, []).length === 0);
+
+  console.log("\n== Recommandations : signal des avis (« vous avez aimé ») ==");
+  // P8, P12, P13 sont tous les trois « Accessoires » ; P12 et P13 sont même au même
+  // prix (1,09 €). Hors avis, rien ne devrait les départager face à P8.
+  const p8 = listPublicProducts(state7).find((p) => p.sku === "P8")!;
+  await transaction((state) => {
+    // Note moyenne 5, sur assez d'avis pour que le bonus s'applique (seuil : 3).
+    for (let i = 0; i < 3; i++) {
+      createReview(state, {
+        productId: state.products.find((p) => p.sku === "P12")!.id,
+        author: `Cliente ${i}`,
+        rating: 5,
+        comment: "Solide et bien fini, exactement ce qu'il fallait.",
+      });
+    }
+    // Même note moyenne (5/5), mais sous le seuil de confiance : le bonus ne doit
+    // pas s'appliquer malgré une moyenne identique à P12.
+    for (let i = 0; i < 2; i++) {
+      createReview(state, {
+        productId: state.products.find((p) => p.sku === "P13")!.id,
+        author: `Client ${i}`,
+        rating: 5,
+        comment: "Pratique au quotidien.",
+      });
+    }
+  });
+  const stateRatings = await readState();
+  const ranked = scoreCandidates(
+    stateRatings,
+    listPublicProducts(stateRatings).find((p) => p.id === p8.id)!,
+  );
+  const rankP12 = ranked.findIndex((p) => p.sku === "P12");
+  const rankP13 = ranked.findIndex((p) => p.sku === "P13");
+  check(
+    "produit bien noté (assez d'avis) suggéré avant un produit à moyenne identique mais moins d'avis",
+    rankP12 !== -1 && rankP13 !== -1 && rankP12 < rankP13,
+    `P12=${rankP12} P13=${rankP13}`,
+  );
 
   console.log("\n== Code promo une fois par client ==");
   const oncePromoId = await transaction((state) => {
