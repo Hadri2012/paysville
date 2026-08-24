@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fileExtension, formatBytes } from "@/lib/digital";
+import { fileExtension, formatBytes, isDigitalOnly } from "@/lib/digital";
 import { formatPrice } from "@/lib/money";
 import type { PublicOrderView } from "@/lib/orders";
 import {
@@ -110,8 +110,7 @@ function Downloads({ order }: { order: PublicOrderView }) {
 export function OrderDetails({ order: initialOrder }: { order: PublicOrderView }) {
   const [order, setOrder] = useState(initialOrder);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const digitalOnly =
-    order.items.length > 0 && order.items.every((item) => item.kind === "digital");
+  const digitalOnly = isDigitalOnly(order.items);
 
   const canEditAddress = ["awaiting_payment", "paid", "preparing", "ready"].includes(
     order.status,
@@ -268,6 +267,7 @@ export function OrderDetails({ order: initialOrder }: { order: PublicOrderView }
       {editModalOpen && (
         <EditAddressModal
           order={order}
+          digitalOnly={digitalOnly}
           onAddressUpdated={setOrder}
           onClose={() => setEditModalOpen(false)}
         />

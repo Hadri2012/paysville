@@ -5,10 +5,21 @@ import type { PublicOrderView } from "@/lib/orders";
 
 export function EditAddressModal({
   order,
+  digitalOnly,
   onAddressUpdated,
   onClose,
 }: {
   order: PublicOrderView;
+  /**
+   * Commande entièrement composée de fichiers téléchargeables : rien à
+   * expédier, l'adresse ne sert qu'à la facturation et reste facultative —
+   * comme au checkout (voir `isDigitalOnly`). Sans cet indicateur, les champs
+   * restaient marqués `required` même pour ces commandes, dont l'adresse est
+   * vide par construction : impossible d'enregistrer quoi que ce soit, y
+   * compris juste corriger le pays de facturation, sans d'abord inventer une
+   * rue et un numéro qui n'ont pourtant aucun objet.
+   */
+  digitalOnly: boolean;
   onAddressUpdated: (updatedOrder: PublicOrderView) => void;
   onClose: () => void;
 }) {
@@ -75,24 +86,31 @@ export function EditAddressModal({
           </button>
         </div>
 
+        {digitalOnly ? (
+          <p className="small muted">
+            Cette commande ne contient que des fichiers téléchargeables : rien à
+            expédier. L&apos;adresse ci-dessous ne sert qu&apos;à la facturation et reste
+            facultative.
+          </p>
+        ) : null}
         <form className="stack" onSubmit={handleSubmit}>
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="street">Rue</label>
+              <label htmlFor="street">Rue {digitalOnly ? "" : "*"}</label>
               <input
                 id="street"
                 value={street}
                 onChange={(e) => setStreet(e.target.value)}
-                required
+                required={!digitalOnly}
               />
             </div>
             <div className="field">
-              <label htmlFor="streetNumber">Numéro</label>
+              <label htmlFor="streetNumber">Numéro {digitalOnly ? "" : "*"}</label>
               <input
                 id="streetNumber"
                 value={streetNumber}
                 onChange={(e) => setStreetNumber(e.target.value)}
-                required
+                required={!digitalOnly}
               />
             </div>
           </div>
@@ -109,32 +127,32 @@ export function EditAddressModal({
 
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="postalCode">Code postal</label>
+              <label htmlFor="postalCode">Code postal {digitalOnly ? "" : "*"}</label>
               <input
                 id="postalCode"
                 value={postalCode}
                 onChange={(e) => setPostalCode(e.target.value)}
-                required
+                required={!digitalOnly}
               />
             </div>
             <div className="field">
-              <label htmlFor="city">Ville</label>
+              <label htmlFor="city">Ville {digitalOnly ? "" : "*"}</label>
               <input
                 id="city"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                required
+                required={!digitalOnly}
               />
             </div>
           </div>
 
           <div className="field">
-            <label htmlFor="country">Pays</label>
+            <label htmlFor="country">Pays {digitalOnly ? "" : "*"}</label>
             <input
               id="country"
               value={country}
               onChange={(e) => setCountry(e.target.value)}
-              required
+              required={!digitalOnly}
             />
           </div>
 

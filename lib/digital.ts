@@ -36,6 +36,18 @@ export function fileFormats(files: Pick<DigitalFile, "name">[]): string[] {
   return [...seen];
 }
 
+/**
+ * Un panier ou une commande n'a rien à expédier physiquement s'il ne contient
+ * que des fichiers téléchargeables : l'adresse postale y devient facultative,
+ * réduite à la facturation (voir `buildQuote`, le checkout, et la modification
+ * d'adresse depuis le suivi de commande, qui appliquent tous la même règle).
+ * Un panier vide ne compte pas comme « tout numérique » — il n'y a simplement
+ * rien à livrer, ce n'est pas la même chose.
+ */
+export function isDigitalOnly(items: { kind: "physical" | "digital" }[]): boolean {
+  return items.length > 0 && items.every((item) => item.kind === "digital");
+}
+
 /** Une commande donne-t-elle (encore) accès à ses fichiers ? */
 export function orderGrantsDownloads(order: Order): boolean {
   return (

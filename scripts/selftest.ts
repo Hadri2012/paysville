@@ -9,6 +9,7 @@ import {
   fileExtension,
   fileFormats,
   formatBytes,
+  isDigitalOnly,
   orderDownloads,
 } from "../lib/digital";
 import { newId } from "../lib/ids";
@@ -1037,6 +1038,27 @@ async function main() {
     "panier mixte : livraison toujours résolue",
     mixedQuote.hasDigital && !mixedQuote.digitalOnly && mixedQuote.shippingCovered === true,
   );
+
+  // `isDigitalOnly` est la même fonction utilisée par `buildQuote` (checkout),
+  // par la route `orders/update-address`, et par `EditAddressModal` (suivi de
+  // commande) pour décider si l'adresse postale est facultative. Une seule
+  // implémentation partagée évite qu'un des trois oublie la règle des deux
+  // autres — c'est précisément ce qui s'était produit pour le formulaire de
+  // modification d'adresse, dont les champs restaient tous obligatoires même
+  // pour une commande entièrement numérique (adresse vide par construction) :
+  // impossible de rien enregistrer, y compris corriger seulement le pays de
+  // facturation, sans inventer une rue et un numéro sans objet. Reproduit en
+  // conditions réelles (commande 100 % fichiers créée via /api/checkout, adresse
+  // vide confirmée par /api/orders/track, mise à jour avec adresse vide acceptée
+  // par /api/orders/update-address) puis corrigé en propageant ce même indicateur
+  // jusqu'au formulaire.
+  check("isDigitalOnly : panier 100 % fichiers", isDigitalOnly(digitalQuote.lines));
+  check("isDigitalOnly : panier mixte", !isDigitalOnly(mixedQuote.lines));
+  check(
+    "isDigitalOnly : panier 100 % physique",
+    !isDigitalOnly([{ kind: "physical" }]),
+  );
+  check("isDigitalOnly : panier vide", !isDigitalOnly([]));
 
   check(
     "adresse facultative pour une commande de fichiers",

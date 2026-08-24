@@ -1,4 +1,4 @@
-import { fileFormats } from "./digital";
+import { fileFormats, isDigitalOnly } from "./digital";
 import { errors } from "./errors";
 import {
   MAX_DELIVERY_DISTANCE_KM,
@@ -654,7 +654,7 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
   }
 
   const hasDigital = lines.some((line) => line.kind === "digital");
-  const digitalOnly = lines.length > 0 && lines.every((line) => line.kind === "digital");
+  const digitalOnly = isDigitalOnly(lines);
 
   let shippingCents = 0;
   let shippingCovered: boolean | null = null;

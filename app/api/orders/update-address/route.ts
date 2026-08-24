@@ -1,3 +1,4 @@
+import { isDigitalOnly } from "@/lib/digital";
 import { errors } from "@/lib/errors";
 import { handle, jsonOk, limit, limitKey, readJson } from "@/lib/http";
 import { findOrderByNumber, publicOrderView } from "@/lib/orders";
@@ -43,8 +44,7 @@ export async function POST(request: Request) {
 
       // Une commande entièrement composée de fichiers n'a rien à expédier : même
       // règle qu'au checkout, l'adresse y sert seulement de facturation.
-      const digitalOnly =
-        order.items.length > 0 && order.items.every((item) => item.kind === "digital");
+      const digitalOnly = isDigitalOnly(order.items);
 
       // Valide l'adresse de la même façon que lors du checkout.
       const parsed = parseCheckoutIdentity(

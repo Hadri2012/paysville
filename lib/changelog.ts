@@ -43,6 +43,13 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-24T06:55:00Z",
+    kind: "correctif",
+    title: "Adresse impossible à corriger sur une commande de fichiers",
+    details:
+      "Depuis le suivi de commande, la fenêtre de modification d'adresse exigeait une rue, un numéro, un code postal et une ville même pour une commande entièrement composée de fichiers téléchargeables — dont l'adresse est facultative, comme au moment de la commande. Impossible dans ce cas d'enregistrer quoi que ce soit, y compris corriger seulement le pays de facturation, sans inventer une adresse postale sans objet. La fenêtre applique désormais la même règle que le reste du site.",
+  },
+  {
     at: "2026-08-23T22:40:00Z",
     kind: "correctif",
     title: "Protection renforcée contre les tentatives répétées",
