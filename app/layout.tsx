@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { CartProvider } from "@/components/CartProvider";
 import { FavoritesProvider } from "@/components/FavoritesProvider";
+import { SetupNotice } from "@/components/SetupNotice";
+import { storeConfigurationError } from "@/lib/store";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -18,15 +20,25 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+/**
+ * Le défaut de configuration est intercepté ici, au-dessus de `app/error.tsx` :
+ * une page qui lance l'erreur elle-même est rattrapée par la frontière d'erreur,
+ * qui ne peut afficher qu'un message générique. Vu d'ici, on sait quoi dire.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const configurationProblem = storeConfigurationError();
   return (
     <html lang="fr">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <CartProvider>
-          <FavoritesProvider>{children}</FavoritesProvider>
-        </CartProvider>
+        {configurationProblem ? (
+          <SetupNotice reason={configurationProblem} />
+        ) : (
+          <CartProvider>
+            <FavoritesProvider>{children}</FavoritesProvider>
+          </CartProvider>
+        )}
       </body>
     </html>
   );

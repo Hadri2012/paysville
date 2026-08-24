@@ -146,6 +146,11 @@ function migrate(state: State): State {
   // partis depuis des semaines.
   if (state.schemaVersion < 8) {
     for (const order of state.orders) {
+      // `statusHistory` est en principe toujours présent, mais une commande
+      // écrite par une version très ancienne pourrait ne pas l'avoir : une
+      // migration qui échoue rend la boutique entière illisible, pour une
+      // commande mal formée.
+      order.statusHistory ??= [];
       order.notifiedStatuses ??= [...new Set(order.statusHistory.map((e) => e.status))];
     }
   }
@@ -304,25 +309,41 @@ function createPostgresStore(connectionString: string): Store {
 
 const globalStore = globalThis as unknown as { __hadrishopStore?: Store };
 
+/**
+ * Le stockage est-il configurable en l'état ? Renvoie `null` si oui, sinon la
+ * raison, rédigée pour la personne qui exploite la boutique.
+ *
+ * Séparé de `getStore()` pour pouvoir être posé la question **sans** déclencher
+ * d'exception : une erreur lancée depuis un composant serveur n'arrive au
+ * navigateur que sous la forme « Une erreur est survenue » — Next.js masque le
+ * message en production, et à raison. Un défaut de configuration se règle en
+ * deux minutes quand on sait lequel, et ne se règle jamais quand la page refuse
+ * de le dire (voir `components/SetupNotice.tsx`).
+ *
+ * Vérification purement locale (lecture de variables d'environnement) : elle
+ * peut être faite à chaque rendu sans coût ni accès réseau.
+ */
+export function storeConfigurationError(): string | null {
+  // Sur un hébergement au système de fichiers en lecture seule (Vercel et
+  // équivalents), le pilote fichier échouerait avec une erreur EROFS obscure,
+  // à la première écriture seulement — donc potentiellement en pleine commande.
+  // Mieux vaut refuser tout de suite.
+  if (!process.env.DATABASE_URL && process.env.VERCEL) {
+    return (
+      "DATABASE_URL est absent. Sur Vercel, le système de fichiers est en " +
+      "lecture seule : le stockage fichier ne peut pas fonctionner et les " +
+      "données (commandes, stocks, compte admin) seraient perdues."
+    );
+  }
+  return null;
+}
+
 export function getStore(): Store {
   if (!globalStore.__hadrishopStore) {
+    const problem = storeConfigurationError();
+    if (problem) throw new Error(problem);
+
     const url = process.env.DATABASE_URL;
-
-    // Sur un hébergement au système de fichiers en lecture seule (Vercel et
-    // équivalents), le pilote fichier échouerait avec une erreur EROFS obscure,
-    // à la première écriture seulement — donc potentiellement en pleine commande.
-    // Mieux vaut refuser tout de suite avec un message qui dit quoi faire.
-    if (!url && process.env.VERCEL) {
-      throw new Error(
-        "DATABASE_URL est absent. Sur Vercel, le système de fichiers est en " +
-          "lecture seule : le stockage fichier ne peut pas fonctionner et les " +
-          "données (commandes, stocks, compte admin) seraient perdues. " +
-          "Créez une base PostgreSQL (Vercel → Storage → Create Database → " +
-          "Postgres, puis Connect au projet), ou renseignez DATABASE_URL dans " +
-          "Settings → Environment Variables, puis redéployez.",
-      );
-    }
-
     globalStore.__hadrishopStore = url
       ? createPostgresStore(url)
       : createFileStore();

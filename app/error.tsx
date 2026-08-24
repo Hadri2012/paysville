@@ -35,6 +35,15 @@ export default function GlobalError({
               Retour à l&apos;accueil
             </Link>
           </div>
+          {/* Le `digest` n'est pas une trace technique : c'est l'empreinte que le
+              serveur inscrit à côté de l'erreur complète dans ses journaux. Sans
+              lui, retrouver la bonne ligne dans les journaux d'un hébergement
+              tient de la fouille. Il ne révèle rien de l'erreur elle-même. */}
+          {error.digest ? (
+            <p style={{ marginTop: 20, fontSize: 12, opacity: 0.7 }}>
+              Référence à communiquer : <code>{error.digest}</code>
+            </p>
+          ) : null}
         </div>
       </div>
     </main>
