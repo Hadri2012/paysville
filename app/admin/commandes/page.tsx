@@ -7,9 +7,12 @@ import { readState } from "@/lib/store";
 import {
   ORDER_STATUSES,
   ORDER_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYMENT_STATUS_LABELS,
   type OrderStatus,
+  type PaymentMethod,
   type PaymentStatus,
 } from "@/lib/types";
 
@@ -21,6 +24,7 @@ interface SearchParams {
   q?: string;
   statut?: string;
   paiement?: string;
+  moyen?: string;
   du?: string;
   au?: string;
 }
@@ -37,6 +41,7 @@ export default async function AdminOrdersPage({
   const query = (filters.q ?? "").trim().toLowerCase();
   const status = filters.statut ?? "";
   const payment = filters.paiement ?? "";
+  const method = filters.moyen ?? "";
   const from = filters.du ? Date.parse(`${filters.du}T00:00:00`) : null;
   const to = filters.au ? Date.parse(`${filters.au}T23:59:59`) : null;
 
@@ -45,6 +50,7 @@ export default async function AdminOrdersPage({
     .filter((order) => {
       if (status && order.status !== status) return false;
       if (payment && order.paymentStatus !== payment) return false;
+      if (method && order.paymentMethod !== method) return false;
       const created = Date.parse(order.createdAt);
       if (from !== null && created < from) return false;
       if (to !== null && created > to) return false;
@@ -109,6 +115,17 @@ export default async function AdminOrdersPage({
             {PAYMENT_STATUSES.map((value) => (
               <option key={value} value={value}>
                 {PAYMENT_STATUS_LABELS[value as PaymentStatus]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="moyen">Moyen</label>
+          <select id="moyen" name="moyen" defaultValue={method}>
+            <option value="">Tous</option>
+            {PAYMENT_METHODS.map((value) => (
+              <option key={value} value={value}>
+                {PAYMENT_METHOD_LABELS[value as PaymentMethod]}
               </option>
             ))}
           </select>
@@ -179,7 +196,7 @@ export default async function AdminOrdersPage({
                     <StatusBadge status={order.status} />
                   </td>
                   <td className="no-strike">
-                    <PaymentBadge status={order.paymentStatus} />
+                    <PaymentBadge status={order.paymentStatus} paymentMethod={order.paymentMethod} />
                   </td>
                   <td className="num">{formatPrice(order.totalCents, order.currency)}</td>
                   <td className="num no-strike">

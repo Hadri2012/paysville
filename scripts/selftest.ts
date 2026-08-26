@@ -19,9 +19,12 @@ import { newId } from "../lib/ids";
 import { notifyOrderStatus } from "../lib/notify";
 import {
   MIN_RESERVATION_MINUTES,
+  collectCashPayment,
+  confirmCashOnDelivery,
   confirmOrderPayment,
   createPendingOrder,
   publicOrderView,
+  restockOrder,
   setOrderStatus,
 } from "../lib/orders";
 import { markRefunded } from "../lib/payments";
@@ -429,6 +432,172 @@ async function main() {
     "remboursement total : stock remis en rayon",
     afterFull.products.find((p) => p.id === p6.id)!.stock === stockBeforeRefund + 2,
   );
+
+  console.log("\n== Paiement en espèces à la livraison ==");
+  const p9 = state4.products.find((p) => p.sku === "P9")!; // stock 3, 2,19 €
+  const codDisabledQuote = buildQuote(await readState(), {
+    items: [{ productId: p9.id, quantity: 1 }],
+    postalCode: "1435",
+    city: "Corbais",
+  });
+  check(
+    "désactivé par défaut : jamais proposé",
+    codDisabledQuote.cashOnDeliveryEnabled === false &&
+      codDisabledQuote.cashOnDeliveryAvailable === false,
+  );
+
+  await transaction((state) => {
+    state.settings.cashOnDeliveryEnabled = true;
+    state.settings.cashOnDeliveryMaxCents = 500; // 5 €, volontairement bas pour tester le plafond
+  });
+
+  const stateCodEnabled = await readState();
+  const codQuote = buildQuote(stateCodEnabled, {
+    items: [{ productId: p9.id, quantity: 1 }], // 2,19 €
+    postalCode: "1435",
+    city: "Corbais",
+  });
+  check(
+    "proposé pour un panier physique sous le plafond, adresse couverte",
+    codQuote.cashOnDeliveryEnabled && codQuote.cashOnDeliveryAvailable === true,
+  );
+
+  const overCapQuote = buildQuote(stateCodEnabled, {
+    items: [{ productId: p9.id, quantity: 3 }], // 6,57 € > 5 €
+    postalCode: "1435",
+    city: "Corbais",
+  });
+  check(
+    "refusé au-delà du plafond",
+    overCapQuote.cashOnDeliveryAvailable === false && Boolean(overCapQuote.cashOnDeliveryReason),
+    overCapQuote.cashOnDeliveryReason ?? "",
+  );
+
+  // Plafond levé pour la suite : la commande réelle testée plus bas, et la
+  // vérification « panier numérique » avec le panier mixte, n'ont rien à voir
+  // avec ce plafond précis.
+  await transaction((state) => {
+    state.settings.cashOnDeliveryMaxCents = null;
+  });
+
+  // Cycle de vie complet : la commande devient ferme dès sa validation — le
+  // stock sort du catalogue — sans qu'aucun paiement en ligne n'ait eu lieu.
+  const codOrder = await transaction((state) => {
+    sweepReservations(state);
+    const quote = buildQuote(state, {
+      items: [{ productId: p9.id, quantity: 1 }],
+      postalCode: "1435",
+      city: "Corbais",
+      strict: true,
+    });
+    const created = createPendingOrder(state, {
+      quote,
+      identity,
+      paymentMethod: "cash_on_delivery",
+    });
+    confirmCashOnDelivery(state, created.id);
+    return created;
+  });
+
+  const stateCodOrder = await readState();
+  const confirmedCod = stateCodOrder.orders.find((o) => o.id === codOrder.id)!;
+  check(
+    "commande en espèces confirmée : « en préparation », jamais « payée »",
+    confirmedCod.status === "preparing" &&
+      confirmedCod.paymentStatus === "pending" &&
+      !confirmedCod.statusHistory.some((event) => event.status === "paid"),
+  );
+  check(
+    "stock retiré du catalogue avant tout encaissement",
+    stateCodOrder.products.find((p) => p.id === p9.id)!.stock === 2,
+  );
+  check("stock marqué engagé", confirmedCod.stockCommitted === true);
+
+  // Confirmer deux fois ne décompte pas le stock deux fois — même garantie
+  // d'idempotence que pour la confirmation Stripe (webhook rejoué).
+  await transaction((state) => confirmCashOnDelivery(state, codOrder.id));
+  const afterSecondConfirm = await readState();
+  check(
+    "confirmation en espèces idempotente",
+    afterSecondConfirm.products.find((p) => p.id === p9.id)!.stock === 2,
+  );
+
+  // Le premier message envoyé joue le rôle de confirmation de commande — cette
+  // étape n'a jamais été précédée d'un e-mail « paiement confirmé », qui
+  // n'existe pas pour ce moyen de paiement.
+  const codNotifyOutcome = await notifyOrderStatus(codOrder.id, "preparing");
+  check(
+    "e-mail de confirmation envoyé pour la commande en espèces",
+    codNotifyOutcome !== "skipped",
+    codNotifyOutcome,
+  );
+  const codMessage = renderOrderEmail(
+    { order: confirmedCod, settings: stateCodOrder.settings, siteUrl: "https://exemple.be" },
+    "preparing",
+  );
+  check(
+    "e-mail « espèces » : confirmation de commande, jamais « paiement confirmé »",
+    codMessage.html.includes("Commande confirmée") &&
+      !codMessage.html.includes("Paiement confirmé") &&
+      codMessage.text.toLowerCase().includes("espèces"),
+  );
+
+  // Encaissement, indépendant du changement de statut (voir le bouton dédié de
+  // l'administration).
+  const codPaidOutcome = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === codOrder.id)!;
+    return collectCashPayment(order);
+  });
+  check("encaissement des espèces : premier appel réussit", codPaidOutcome === true);
+  check(
+    "encaissement des espèces : commande marquée payée",
+    (await readState()).orders.find((o) => o.id === codOrder.id)!.paymentStatus === "paid",
+  );
+  const codPaidAgain = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === codOrder.id)!;
+    return collectCashPayment(order);
+  });
+  check("encaissement des espèces : second appel sans effet (déjà payée)", codPaidAgain === false);
+  const codOnCardOrder = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === orderA.id)!;
+    return collectCashPayment(order);
+  });
+  check("collectCashPayment sans effet sur une commande réglée par carte", codOnCardOrder === false);
+
+  // Annulation d'une commande en espèces jamais payée : le stock doit revenir
+  // en rayon exactement comme pour un paiement par carte — le critère est
+  // « le stock est engagé », pas « la commande est payée ».
+  const codCancelOrder = await transaction((state) => {
+    sweepReservations(state);
+    const quote = buildQuote(state, {
+      items: [{ productId: p9.id, quantity: 1 }],
+      postalCode: "1435",
+      city: "Corbais",
+      strict: true,
+    });
+    const created = createPendingOrder(state, {
+      quote,
+      identity,
+      paymentMethod: "cash_on_delivery",
+    });
+    confirmCashOnDelivery(state, created.id);
+    return created;
+  });
+  await transaction((state) => {
+    const order = state.orders.find((o) => o.id === codCancelOrder.id)!;
+    restockOrder(state, order);
+    order.paymentStatus = "canceled";
+    setOrderStatus(order, "canceled", "Annulée pour le test.");
+  });
+  check(
+    "annulation d'une commande en espèces : stock remis en rayon",
+    (await readState()).products.find((p) => p.id === p9.id)!.stock === 2,
+  );
+  const codCanceledOutcome = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === codCancelOrder.id)!;
+    return collectCashPayment(order);
+  });
+  check("aucun encaissement possible sur une commande annulée", codCanceledOutcome === false);
 
   console.log("\n== Expiration de réservation ==");
   const p5 = state4.products.find((p) => p.sku === "P5")!;
@@ -1085,6 +1254,13 @@ async function main() {
       digitalQuote.shippingCovered === true,
     `covered=${digitalQuote.shippingCovered}`,
   );
+  check(
+    "espèces indisponibles pour un panier entièrement numérique : rien à livrer",
+    digitalQuote.cashOnDeliveryEnabled &&
+      digitalQuote.cashOnDeliveryAvailable === false &&
+      Boolean(digitalQuote.cashOnDeliveryReason),
+    digitalQuote.cashOnDeliveryReason ?? "",
+  );
   const mixedQuote = buildQuote(state10, {
     items: [
       { productId: digitalId, quantity: 1 },
@@ -1096,6 +1272,10 @@ async function main() {
   check(
     "panier mixte : livraison toujours résolue",
     mixedQuote.hasDigital && !mixedQuote.digitalOnly && mixedQuote.shippingCovered === true,
+  );
+  check(
+    "espèces disponibles pour un panier mixte (physique + numérique) livré",
+    mixedQuote.cashOnDeliveryAvailable === true,
   );
 
   // `isDigitalOnly` est la même fonction utilisée par `buildQuote` (checkout),

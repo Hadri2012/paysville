@@ -8,6 +8,7 @@ import {
   ORDER_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
   type OrderStatus,
+  type PaymentMethod,
   type PaymentStatus,
 } from "@/lib/types";
 import { OrderTimeline } from "./OrderTimeline";
@@ -29,7 +30,22 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
   );
 }
 
-export function PaymentBadge({ status }: { status: PaymentStatus }) {
+export function PaymentBadge({
+  status,
+  paymentMethod,
+}: {
+  status: PaymentStatus;
+  /**
+   * Une commande en espèces reste « en attente » jusqu'à la livraison — c'est
+   * l'état normal, pas un problème de paiement. Sans cette distinction, le
+   * badge orange « En attente » se lirait comme une alerte sur une commande
+   * qui suit pourtant son cours normal.
+   */
+  paymentMethod?: PaymentMethod;
+}) {
+  if (status === "pending" && paymentMethod === "cash_on_delivery") {
+    return <span className="badge badge-info">Paiement : espèces à la livraison</span>;
+  }
   const tone: Record<PaymentStatus, string> = {
     pending: "badge-warning",
     paid: "badge-success",
@@ -140,7 +156,7 @@ export function OrderDetails({ order: initialOrder }: { order: PublicOrderView }
           </div>
           <div className="btn-row">
             <StatusBadge status={order.status} />
-            <PaymentBadge status={order.paymentStatus} />
+            <PaymentBadge status={order.paymentStatus} paymentMethod={order.paymentMethod} />
           </div>
         </div>
       </section>
@@ -260,7 +276,11 @@ export function OrderDetails({ order: initialOrder }: { order: PublicOrderView }
 
         <section className="card">
           <h3 className="card-title">Suivi</h3>
-          <OrderTimeline status={order.status} statusHistory={order.statusHistory} />
+          <OrderTimeline
+            status={order.status}
+            statusHistory={order.statusHistory}
+            paymentMethod={order.paymentMethod}
+          />
         </section>
       </div>
 

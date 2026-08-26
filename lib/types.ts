@@ -15,6 +15,18 @@ export type OrderStatus =
 
 export type PaymentStatus = "pending" | "paid" | "failed" | "canceled" | "refunded";
 
+/**
+ * Comment la commande est réglée.
+ *
+ * `stripe` : carte bancaire, avant préparation — la commande n'est ferme qu'une
+ * fois le paiement confirmé.
+ * `cash_on_delivery` : espèces remises au livreur. La commande est ferme dès sa
+ * validation (le stock part immédiatement), et son `paymentStatus` reste
+ * `pending` jusqu'à la remise en main propre. Les deux notions sont donc bien
+ * distinctes : « commande confirmée » n'y veut pas dire « commande payée ».
+ */
+export type PaymentMethod = "stripe" | "cash_on_delivery";
+
 export type PromotionType = "fixed" | "percent";
 
 export type ReservationStatus = "active" | "consumed" | "released";
@@ -129,6 +141,8 @@ export interface Order {
   currency: string;
   stripeSessionId: string | null;
   stripePaymentIntentId: string | null;
+  /** Carte bancaire (Stripe) ou espèces à la livraison. */
+  paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   status: OrderStatus;
   accessToken: string;
@@ -138,6 +152,17 @@ export interface Order {
     termsAt: string;
     marketing: boolean;
   };
+  /**
+   * Le stock de cette commande est décompté du catalogue.
+   *
+   * Passe à vrai quand la commande devient ferme — confirmation du paiement
+   * Stripe, ou validation d'une commande payable à la livraison — et repasse à
+   * faux quand les articles retournent en rayon. Une commande en espèces engage
+   * son stock **sans être payée** : sans ce champ, l'annuler laisserait les
+   * articles hors catalogue, puisque les remises en rayon se déclenchaient
+   * jusqu'ici sur « la commande était payée ».
+   */
+  stockCommitted: boolean;
   /** Renseigné si le stock n'a pas pu être décrémenté correctement (à traiter manuellement). */
   stockWarning: string | null;
   adminNote: string;
@@ -268,6 +293,21 @@ export interface Settings {
   freeShippingThresholdCents: number | null;
   lowStockThreshold: number;
   reservationMinutes: number;
+  /**
+   * Proposer le paiement en espèces à la livraison.
+   *
+   * Désactivé au démarrage : encaisser du liquide engage la boutique bien
+   * au-delà du code (présence à la remise, monnaie, comptabilité). C'est une
+   * décision qui se prend, pas un réglage qu'on découvre activé.
+   */
+  cashOnDeliveryEnabled: boolean;
+  /**
+   * Plafond du total réglable en espèces, `null` pour aucun plafond. Le livreur
+   * ne transporte pas la caisse : au-delà d'un certain montant, faire la monnaie
+   * devient un problème, et l'impayé une perte sèche puisque rien n'a été
+   * encaissé d'avance.
+   */
+  cashOnDeliveryMaxCents: number | null;
   legal: {
     companyName: string;
     address: string;
@@ -313,3 +353,14 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
 };
 
 export const PAYMENT_STATUSES = Object.keys(PAYMENT_STATUS_LABELS) as PaymentStatus[];
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  stripe: "Carte bancaire",
+  cash_on_delivery: "Espèces à la livraison",
+};
+
+export const PAYMENT_METHODS = Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[];
+
+export function isPaymentMethod(value: unknown): value is PaymentMethod {
+  return typeof value === "string" && (PAYMENT_METHODS as string[]).includes(value);
+}

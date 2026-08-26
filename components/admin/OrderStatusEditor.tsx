@@ -3,16 +3,26 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiCall } from "./apiClient";
-import { ORDER_STATUSES, ORDER_STATUS_LABELS, type OrderStatus } from "@/lib/types";
+import {
+  ORDER_STATUSES,
+  ORDER_STATUS_LABELS,
+  type OrderStatus,
+  type PaymentMethod,
+  type PaymentStatus,
+} from "@/lib/types";
 
 export function OrderStatusEditor({
   orderId,
   status,
   adminNote,
+  paymentMethod,
+  paymentStatus,
 }: {
   orderId: string;
   status: OrderStatus;
   adminNote: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
 }) {
   const router = useRouter();
   const [value, setValue] = useState<OrderStatus>(status);
@@ -73,6 +83,27 @@ export function OrderStatusEditor({
       >
         {busy ? "…" : "Mettre à jour le statut"}
       </button>
+
+      {paymentMethod === "cash_on_delivery" &&
+      paymentStatus === "pending" &&
+      status !== "canceled" &&
+      status !== "refunded" ? (
+        <div className="field">
+          <span className="hint" style={{ display: "block", marginBottom: 8 }}>
+            Réglée en espèces, pas encore encaissée. Passer la commande à « Livrée »
+            l&apos;enregistre automatiquement ; utilisez ce bouton si l&apos;argent est
+            compté à un autre moment de la tournée.
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => save({ markCashCollected: true }, "Paiement en espèces enregistré.")}
+          >
+            Marquer les espèces comme encaissées
+          </button>
+        </div>
+      ) : null}
 
       <div className="field">
         <label htmlFor="adminNote">Note interne (non visible par le client)</label>

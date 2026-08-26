@@ -523,6 +523,22 @@ export interface Quote {
   hasDigital: boolean;
   /** Tous les articles sont des fichiers : aucune livraison physique. */
   digitalOnly: boolean;
+  /**
+   * La boutique propose-t-elle ce moyen de paiement en général ? Distinct de
+   * `cashOnDeliveryAvailable` : celui-ci reste faux tant que la fonctionnalité
+   * est éteinte, sans rapport avec ce panier précis — c'est ce qui permet à
+   * l'écran de commande de masquer l'option plutôt que de l'afficher grisée
+   * avec un motif qui n'en est pas un.
+   */
+  cashOnDeliveryEnabled: boolean;
+  /**
+   * Le paiement en espèces à la livraison est-il proposable pour ce panier,
+   * cette adresse et ce total ? `null` tant que l'adresse n'est pas encore
+   * connue — indisponible n'est vrai qu'une fois vérifié, pas par défaut.
+   */
+  cashOnDeliveryAvailable: boolean | null;
+  /** Pourquoi ce n'est pas proposable, à afficher au client. `null` si ça l'est. */
+  cashOnDeliveryReason: string | null;
   totalCents: number;
   currency: string;
 }
@@ -677,6 +693,33 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
     }
   }
 
+  const totalCents = Math.max(0, subtotalCents - discountCents) + shippingCents;
+
+  // Espèces à la livraison : ne se juge qu'une fois l'adresse connue et
+  // couverte — avant cela, `null` (ni proposable ni refusé, juste pas encore
+  // évalué). Une commande entièrement numérique ne connaît aucune remise en
+  // main propre : il n'y a personne à qui tendre l'argent.
+  const cashOnDeliveryEnabled = state.settings.cashOnDeliveryEnabled;
+  let cashOnDeliveryAvailable: boolean | null = null;
+  let cashOnDeliveryReason: string | null = null;
+  if (!cashOnDeliveryEnabled) {
+    cashOnDeliveryAvailable = false;
+  } else if (digitalOnly) {
+    cashOnDeliveryAvailable = false;
+    cashOnDeliveryReason =
+      "Une commande entièrement numérique n'a pas de livraison : le paiement en espèces n'a pas d'objet.";
+  } else if (shippingCovered === true) {
+    const max = state.settings.cashOnDeliveryMaxCents;
+    if (max !== null && totalCents > max) {
+      cashOnDeliveryAvailable = false;
+      cashOnDeliveryReason = `Le paiement en espèces est proposé jusqu'à ${(max / 100)
+        .toFixed(2)
+        .replace(".", ",")} € : au-delà, réglez par carte.`;
+    } else {
+      cashOnDeliveryAvailable = true;
+    }
+  }
+
   return {
     lines,
     issues,
@@ -691,7 +734,10 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
     shippingMessage,
     hasDigital,
     digitalOnly,
-    totalCents: Math.max(0, subtotalCents - discountCents) + shippingCents,
+    cashOnDeliveryEnabled,
+    cashOnDeliveryAvailable,
+    cashOnDeliveryReason,
+    totalCents,
     currency: state.settings.currency,
   };
 }

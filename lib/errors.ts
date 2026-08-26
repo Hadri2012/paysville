@@ -62,6 +62,12 @@ export const errors = {
       "Vous devez accepter les conditions générales de vente pour commander.",
       400,
     ),
+  cashOnDeliveryNotAvailable: (reason?: string) =>
+    new AppError(
+      "cash_on_delivery_not_available",
+      reason ?? "Le paiement en espèces à la livraison n'est pas proposé pour cette commande.",
+      400,
+    ),
   stripeNotConfigured: () =>
     new AppError(
       "stripe_not_configured",

@@ -24,7 +24,13 @@ const STEPS: { status: OrderStatus; when: string }[] = [
 
 export function EmailPreview({ configured }: { configured: boolean }) {
   const [status, setStatus] = useState<OrderStatus>("paid");
+  const [cashOnDelivery, setCashOnDelivery] = useState(false);
   const active = STEPS.find((step) => step.status === status);
+  // Une commande en espèces ne passe jamais par « paid » (voir
+  // `lib/orderFlow.ts#isCashConfirmationStep`) : l'étape n'a rien à montrer
+  // dans ce mode, « En préparation » en tient lieu (c'est elle qui joue le rôle
+  // de confirmation de commande).
+  const previewStatus = cashOnDelivery && status === "paid" ? "preparing" : status;
 
   return (
     <div className="stack-lg">
@@ -58,7 +64,14 @@ export function EmailPreview({ configured }: { configured: boolean }) {
           <h2 className="card-title" style={{ marginBottom: 4 }}>
             Étape à prévisualiser
           </h2>
-          {active ? <p className="small muted" style={{ margin: 0 }}>{active.when}</p> : null}
+          {cashOnDelivery && status === "paid" ? (
+            <p className="small muted" style={{ margin: 0 }}>
+              Une commande en espèces ne passe jamais par cette étape : elle saute
+              directement à « En préparation », qui joue alors le rôle de confirmation.
+            </p>
+          ) : active ? (
+            <p className="small muted" style={{ margin: 0 }}>{active.when}</p>
+          ) : null}
         </div>
 
         <div className="btn-row">
@@ -67,7 +80,7 @@ export function EmailPreview({ configured }: { configured: boolean }) {
               key={step.status}
               type="button"
               className={`btn btn-sm ${
-                step.status === status ? "btn-primary" : "btn-secondary"
+                step.status === previewStatus ? "btn-primary" : "btn-secondary"
               }`}
               onClick={() => setStatus(step.status)}
             >
@@ -75,14 +88,23 @@ export function EmailPreview({ configured }: { configured: boolean }) {
             </button>
           ))}
         </div>
+
+        <label className="checkbox" style={{ marginTop: 4 }}>
+          <input
+            type="checkbox"
+            checked={cashOnDelivery}
+            onChange={(event) => setCashOnDelivery(event.target.checked)}
+          />
+          <span>Aperçu pour un règlement en espèces à la livraison</span>
+        </label>
       </section>
 
       <section className="card card-flush">
         <iframe
           // La clé force le rechargement du cadre à chaque changement d'étape.
-          key={status}
-          src={`/api/admin/email-preview?statut=${status}`}
-          title={`Aperçu de l'e-mail « ${ORDER_STATUS_LABELS[status]} »`}
+          key={`${previewStatus}-${cashOnDelivery}`}
+          src={`/api/admin/email-preview?statut=${previewStatus}${cashOnDelivery ? "&moyen=cash_on_delivery" : ""}`}
+          title={`Aperçu de l'e-mail « ${ORDER_STATUS_LABELS[previewStatus]} »`}
           style={{
             width: "100%",
             height: 900,

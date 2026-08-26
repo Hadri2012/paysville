@@ -4,6 +4,7 @@ import { timingSafeEqual } from "crypto";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { ClearCartOnMount } from "@/components/ClearCartOnMount";
 import { OrderDetails } from "@/components/OrderDetails";
+import { formatPrice } from "@/lib/money";
 import { publicOrderView } from "@/lib/orders";
 import { syncOrderFromStripe } from "@/lib/payments";
 import { readState } from "@/lib/store";
@@ -40,15 +41,39 @@ export default async function ConfirmationPage({
   }
 
   const paid = order.paymentStatus === "paid";
+  // Une commande en espèces n'est jamais « paid » avant la livraison (voir
+  // `confirmCashOnDelivery`) : elle est confirmée dès qu'elle a quitté « en
+  // attente de paiement » sans avoir été annulée. Une carte réglée en ligne, à
+  // l'inverse, ne l'est que par `paymentStatus === "paid"` — le simple fait
+  // d'atteindre cette page ne vaut jamais preuve de paiement.
+  const cashConfirmed =
+    order.paymentMethod === "cash_on_delivery" &&
+    order.status !== "awaiting_payment" &&
+    order.status !== "canceled";
+  const confirmed = paid || cashConfirmed;
   const failed = order.paymentStatus === "failed" || order.paymentStatus === "canceled";
 
   return (
     <main className="page">
       <div className="container page-narrow stack-lg">
-        {paid ? <ClearCartOnMount /> : null}
-        {!paid && !failed ? <AutoRefresh /> : null}
+        {confirmed ? <ClearCartOnMount /> : null}
+        {!confirmed && !failed ? <AutoRefresh /> : null}
 
-        {paid ? (
+        {cashConfirmed ? (
+          <div className="card center" style={{ background: "var(--success-soft)", borderColor: "#abefc6" }}>
+            <div style={{ fontSize: "2.4rem" }} aria-hidden="true">
+              🎉
+            </div>
+            <h1 style={{ marginBottom: 6 }}>Commande confirmée !</h1>
+            <p style={{ margin: 0 }}>
+              Vos articles sont en cours de préparation. Prévoyez{" "}
+              <strong>{formatPrice(order.totalCents, order.currency)}</strong> en espèces
+              pour la livraison. Conservez votre numéro de commande{" "}
+              <strong className="mono">{order.number}</strong> : il vous permet de suivre
+              votre commande à tout moment.
+            </p>
+          </div>
+        ) : paid ? (
           <div className="card center" style={{ background: "var(--success-soft)", borderColor: "#abefc6" }}>
             <div style={{ fontSize: "2.4rem" }} aria-hidden="true">
               🎉

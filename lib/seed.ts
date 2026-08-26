@@ -204,6 +204,10 @@ export function initialState(): State {
       freeShippingThresholdCents: null,
       lowStockThreshold: 2,
       reservationMinutes: 15,
+      // Éteint au démarrage : à activer depuis Administration → Paramètres, une
+      // fois la boutique prête à encaisser du liquide à la remise.
+      cashOnDeliveryEnabled: false,
+      cashOnDeliveryMaxCents: 15000,
       legal: {
         companyName: "",
         address: "",

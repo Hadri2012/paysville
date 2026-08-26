@@ -1,11 +1,17 @@
 import { assertSameOrigin, handle, jsonOk, limit, limitGlobal, readJson, siteUrl } from "@/lib/http";
 import { errors } from "@/lib/errors";
 import { notifyOrderStatus } from "@/lib/notify";
-import { confirmOrderPayment, createPendingOrder, releaseOrder } from "@/lib/orders";
+import {
+  confirmCashOnDelivery,
+  confirmOrderPayment,
+  createPendingOrder,
+  releaseOrder,
+} from "@/lib/orders";
 import { buildQuote, sweepReservations } from "@/lib/shop";
 import { readState, transaction } from "@/lib/store";
 import { createCheckoutSession, isStripeConfigured } from "@/lib/stripe";
 import { verifyTestBypassCode } from "@/lib/testBypass";
+import { isPaymentMethod, type PaymentMethod } from "@/lib/types";
 import { cleanString, parseCartItems, parseCheckoutIdentity } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +36,9 @@ export async function POST(request: Request) {
     if (items.length === 0) throw errors.emptyCart();
 
     const promoCode = cleanString(body.promoCode, 40) || null;
+    const paymentMethod: PaymentMethod = isPaymentMethod(body.paymentMethod)
+      ? body.paymentMethod
+      : "stripe";
 
     // Un panier entièrement composé de fichiers ne s'expédie pas : l'adresse
     // postale devient facultative. Il faut donc connaître la nature du panier
@@ -41,8 +50,9 @@ export async function POST(request: Request) {
 
     // Code de contournement pour valider une commande sans paiement Stripe réel
     // (test uniquement — voir lib/testBypass.ts). Inactif par défaut, et refuse de
-    // fonctionner si une clé Stripe de production est configurée.
-    const bypass = verifyTestBypassCode(body.testBypassCode);
+    // fonctionner si une clé Stripe de production est configurée. Sans objet pour
+    // une commande en espèces, qui ne passe déjà par aucun paiement en ligne.
+    const bypass = paymentMethod === "stripe" && verifyTestBypassCode(body.testBypassCode);
 
     // Pré-vérification stricte (produits, stock, promo, zone de livraison) : elle
     // donne au client un message précis avant même de parler de paiement. Elle est
@@ -59,7 +69,7 @@ export async function POST(request: Request) {
     // transaction ci-dessous écrit l'état.
     const preCheckState = await readState();
     sweepReservations(preCheckState);
-    buildQuote(preCheckState, {
+    const preCheckQuote = buildQuote(preCheckState, {
       items,
       promoCode,
       customerEmail: identity.customer.email,
@@ -68,7 +78,17 @@ export async function POST(request: Request) {
       strict: true,
     });
 
-    if (!bypass && !isStripeConfigured()) throw errors.stripeNotConfigured();
+    // La disponibilité du paiement en espèces n'est pas une propriété du panier
+    // (comme le stock ou la zone de livraison) : `buildQuote` ne la fait donc
+    // jamais échouer elle-même, il faut la vérifier ici, pour ce choix précis du
+    // client.
+    if (paymentMethod === "cash_on_delivery" && preCheckQuote.cashOnDeliveryAvailable !== true) {
+      throw errors.cashOnDeliveryNotAvailable(preCheckQuote.cashOnDeliveryReason ?? undefined);
+    }
+
+    if (paymentMethod === "stripe" && !bypass && !isStripeConfigured()) {
+      throw errors.stripeNotConfigured();
+    }
 
     const { order, reservationMinutes } = await transaction((state) => {
       sweepReservations(state);
@@ -81,11 +101,30 @@ export async function POST(request: Request) {
         strict: true,
       });
       if (quote.lines.length === 0) throw errors.emptyCart();
+      if (paymentMethod === "cash_on_delivery" && quote.cashOnDeliveryAvailable !== true) {
+        throw errors.cashOnDeliveryNotAvailable(quote.cashOnDeliveryReason ?? undefined);
+      }
       return {
-        order: createPendingOrder(state, { quote, identity }),
+        order: createPendingOrder(state, { quote, identity, paymentMethod }),
         reservationMinutes: state.settings.reservationMinutes,
       };
     });
+
+    if (paymentMethod === "cash_on_delivery") {
+      await transaction((state) => {
+        sweepReservations(state);
+        confirmCashOnDelivery(state, order.id);
+      });
+      // La commande passe directement « en préparation » (voir
+      // `confirmCashOnDelivery`) : c'est cette étape, et non « paid » — jamais
+      // atteinte pour ce moyen de paiement —, qui déclenche le message de
+      // confirmation au client.
+      await notifyOrderStatus(order.id, "preparing");
+      return jsonOk({
+        url: `/confirmation?commande=${encodeURIComponent(order.number)}&token=${encodeURIComponent(order.accessToken)}`,
+        orderNumber: order.number,
+      });
+    }
 
     if (bypass) {
       await transaction((state) => {

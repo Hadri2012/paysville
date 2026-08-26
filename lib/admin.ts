@@ -351,6 +351,23 @@ export function updateSettings(state: State, body: Record<string, unknown>): Set
     settings.contactEmail = cleanString(body.contactEmail, 160);
   }
 
+  if (body.cashOnDeliveryEnabled !== undefined) {
+    settings.cashOnDeliveryEnabled = toBoolean(body.cashOnDeliveryEnabled);
+  }
+
+  if (body.cashOnDeliveryMaxCents !== undefined) {
+    const text = cleanString(body.cashOnDeliveryMaxCents, 20);
+    if (text === "") settings.cashOnDeliveryMaxCents = null;
+    else {
+      const value = parsePriceToCents(text);
+      if (value === null || value <= 0) {
+        fieldErrors.cashOnDeliveryMaxCents = "Montant invalide.";
+      } else {
+        settings.cashOnDeliveryMaxCents = value;
+      }
+    }
+  }
+
   const legalKeys = ["companyName", "address", "email", "phone", "vatNumber"] as const;
   for (const key of legalKeys) {
     if (body[key] !== undefined) {

@@ -43,6 +43,19 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-26T10:00:00Z",
+    kind: "nouveaute",
+    title: "Paiement en espèces à la livraison",
+    details:
+      "En plus de la carte bancaire, le client peut désormais choisir de régler en espèces au moment de la remise, quand la boutique active cette option.",
+    bullets: [
+      "Proposé uniquement pour une livraison physique dans une zone desservie, et seulement en dessous d'un plafond réglable — le livreur ne transporte pas la caisse pour faire la monnaie.",
+      "La commande est ferme dès sa validation : les articles sont mis en préparation et sortent du stock immédiatement, sans qu'aucun montant ne soit prélevé en ligne.",
+      "Le suivi de commande, l'e-mail de confirmation et chaque étape suivante rappellent le montant à préparer en espèces.",
+      "Réglage dans Administration → Paramètres (activation, plafond) ; encaissement enregistré automatiquement en marquant la commande « Livrée », ou à part si l'argent est compté à un autre moment de la tournée.",
+    ],
+  },
+  {
     at: "2026-08-24T14:20:00Z",
     kind: "nouveaute",
     title: "Vous êtes prévenu par e-mail à chaque étape de votre commande",

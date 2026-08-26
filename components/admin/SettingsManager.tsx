@@ -11,6 +11,9 @@ export interface SettingsForm {
   email: string;
   phone: string;
   vatNumber: string;
+  cashOnDeliveryEnabled: boolean;
+  /** Chaîne d'affichage (« 150,00 »), vide = aucun plafond. */
+  cashOnDeliveryMax: string;
 }
 
 export function SettingsManager({
@@ -40,7 +43,11 @@ export function SettingsManager({
     event.preventDefault();
     setBusy(true);
     setMessage(null);
-    const result = await apiCall("/api/admin/settings", "PATCH", form);
+    const { cashOnDeliveryMax, ...rest } = form;
+    const result = await apiCall("/api/admin/settings", "PATCH", {
+      ...rest,
+      cashOnDeliveryMaxCents: cashOnDeliveryMax,
+    });
     setBusy(false);
     if (!result.ok) {
       setMessage({ tone: "error", text: result.message });
@@ -104,6 +111,45 @@ export function SettingsManager({
             <input id="vatNumber" value={form.vatNumber} onChange={update("vatNumber")} />
           </div>
         </div>
+
+        <h2 className="card-title">Paiement en espèces à la livraison</h2>
+        <p className="small muted" style={{ marginTop: -8 }}>
+          Une fois activé, le client peut choisir de régler en liquide à la remise plutôt
+          que par carte. La commande est alors confirmée et son stock retiré du catalogue
+          immédiatement — avant tout encaissement, exactement comme pour un paiement par
+          carte.
+        </p>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.cashOnDeliveryEnabled}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                cashOnDeliveryEnabled: event.target.checked,
+              }))
+            }
+          />
+          <span>Proposer le paiement en espèces à la livraison</span>
+        </label>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="cashOnDeliveryMax">Plafond (facultatif)</label>
+            <input
+              id="cashOnDeliveryMax"
+              inputMode="decimal"
+              placeholder="Aucun plafond"
+              value={form.cashOnDeliveryMax}
+              onChange={update("cashOnDeliveryMax")}
+              disabled={!form.cashOnDeliveryEnabled}
+            />
+            <span className="hint">
+              Total maximal réglable en espèces, en euros. Au-delà, seule la carte est
+              proposée — le livreur ne transporte pas la caisse pour faire la monnaie.
+            </span>
+          </div>
+        </div>
+
         <div>
           <button type="submit" className="btn btn-primary" disabled={busy}>
             {busy ? "Enregistrement…" : "Enregistrer"}

@@ -1,7 +1,7 @@
 import { orderDownloads } from "./digital";
 import { newId, newToken } from "./ids";
 import { availableStock, sweepReservations, type Quote } from "./shop";
-import type { Order, OrderStatus, State } from "./types";
+import type { Order, OrderStatus, PaymentMethod, State } from "./types";
 import type { CheckoutIdentity } from "./validation";
 
 /**
@@ -25,6 +25,8 @@ export function nextOrderNumber(state: State, now = new Date()): string {
 export interface CreateOrderInput {
   quote: Quote;
   identity: CheckoutIdentity;
+  /** Défaut : `stripe`. Voir `confirmCashOnDelivery` pour l'autre chemin. */
+  paymentMethod?: PaymentMethod;
 }
 
 /**
@@ -64,6 +66,7 @@ export function createPendingOrder(state: State, input: CreateOrderInput): Order
     currency: quote.currency,
     stripeSessionId: null,
     stripePaymentIntentId: null,
+    paymentMethod: input.paymentMethod ?? "stripe",
     paymentStatus: "pending",
     status: "awaiting_payment",
     accessToken: newToken(24),
@@ -73,6 +76,7 @@ export function createPendingOrder(state: State, input: CreateOrderInput): Order
       termsAt: iso,
       marketing: identity.marketing,
     },
+    stockCommitted: false,
     stockWarning: null,
     adminNote: "",
     // « En attente de paiement » ne déclenche aucun e-mail : le client vient de
@@ -116,24 +120,18 @@ export function setOrderStatus(
 }
 
 /**
- * Confirme le paiement d'une commande (appelée uniquement depuis une vérification
- * Stripe côté serveur : webhook signé ou récupération de la session via l'API).
- * Idempotent : rejouer l'événement ne décrémente pas le stock deux fois.
+ * Rend la commande ferme : le stock quitte le catalogue et le code promo compte
+ * son utilisation.
+ *
+ * Commun aux deux moyens de paiement, car ce n'est pas l'encaissement qui sort
+ * les articles du catalogue mais l'engagement de les livrer — une commande
+ * payable à la livraison engage la boutique tout autant qu'une commande déjà
+ * réglée. Ne fait rien si le stock est déjà décompté : rejouer un webhook
+ * Stripe ne doit pas décrémenter deux fois.
  */
-export function confirmOrderPayment(
-  state: State,
-  orderId: string,
-  stripe: { sessionId?: string | null; paymentIntentId?: string | null },
-): Order | null {
-  const order = state.orders.find((o) => o.id === orderId);
-  if (!order) return null;
+function commitOrderStock(state: State, order: Order, reason: string): void {
+  if (order.stockCommitted) return;
 
-  if (stripe.sessionId) order.stripeSessionId = stripe.sessionId;
-  if (stripe.paymentIntentId) order.stripePaymentIntentId = stripe.paymentIntentId;
-
-  if (order.paymentStatus === "paid") return order;
-
-  const iso = new Date().toISOString();
   const reservation = state.reservations.find(
     (r) => r.orderId === order.id && r.status === "active",
   );
@@ -165,9 +163,7 @@ export function confirmOrderPayment(
       if (product) product.stock = Math.max(0, product.stock - item.quantity);
     }
     if (missing.length > 0) {
-      order.stockWarning = `Réservation expirée avant confirmation du paiement. Stock à vérifier : ${missing.join(
-        ", ",
-      )}.`;
+      order.stockWarning = `${reason} Stock à vérifier : ${missing.join(", ")}.`;
     }
   }
 
@@ -176,9 +172,82 @@ export function confirmOrderPayment(
     if (promotion) promotion.uses += 1;
   }
 
+  order.stockCommitted = true;
+}
+
+/**
+ * Confirme le paiement d'une commande (appelée uniquement depuis une vérification
+ * Stripe côté serveur : webhook signé ou récupération de la session via l'API).
+ * Idempotent : rejouer l'événement ne décrémente pas le stock deux fois.
+ */
+export function confirmOrderPayment(
+  state: State,
+  orderId: string,
+  stripe: { sessionId?: string | null; paymentIntentId?: string | null },
+): Order | null {
+  const order = state.orders.find((o) => o.id === orderId);
+  if (!order) return null;
+
+  if (stripe.sessionId) order.stripeSessionId = stripe.sessionId;
+  if (stripe.paymentIntentId) order.stripePaymentIntentId = stripe.paymentIntentId;
+
+  if (order.paymentStatus === "paid") return order;
+
+  const iso = new Date().toISOString();
+  commitOrderStock(state, order, "Réservation expirée avant confirmation du paiement.");
+
   order.paymentStatus = "paid";
   setOrderStatus(order, "paid", "Paiement confirmé par Stripe.", iso);
   return order;
+}
+
+/**
+ * Valide une commande payable en espèces à la livraison.
+ *
+ * Rien n'est encaissé ici : `paymentStatus` reste `pending` jusqu'à la remise en
+ * main propre (voir `collectCashPayment`). La commande passe pourtant
+ * directement « en préparation », et son stock est décompté — c'est tout le
+ * sens de ce moyen de paiement : le client s'engage à la commande, la boutique
+ * s'engage à préparer, l'argent circule à la fin.
+ *
+ * Elle ne repasse donc jamais par « en attente de paiement », qui décrirait
+ * l'inverse de ce qui se passe : ce n'est pas la boutique qui attend avant
+ * d'agir.
+ *
+ * Idempotent, comme la confirmation Stripe : deux validations de la même
+ * commande ne décomptent pas le stock deux fois.
+ */
+export function confirmCashOnDelivery(state: State, orderId: string): Order | null {
+  const order = state.orders.find((o) => o.id === orderId);
+  if (!order) return null;
+  if (order.paymentMethod !== "cash_on_delivery") return order;
+  if (order.status !== "awaiting_payment") return order;
+
+  commitOrderStock(state, order, "Réservation expirée avant validation de la commande.");
+  setOrderStatus(
+    state.orders.find((o) => o.id === orderId)!,
+    "preparing",
+    "Commande confirmée. Règlement en espèces à la livraison.",
+  );
+  return order;
+}
+
+/**
+ * Enregistre les espèces remises par le client.
+ *
+ * Séparé du changement d'étape : selon la tournée, l'argent est parfois compté
+ * avant que la commande ne soit marquée livrée, parfois après. Renvoie `false`
+ * s'il n'y avait rien à encaisser — commande réglée par carte, déjà soldée, ou
+ * annulée.
+ */
+export function collectCashPayment(order: Order, at = new Date().toISOString()): boolean {
+  if (order.paymentMethod !== "cash_on_delivery") return false;
+  if (order.paymentStatus !== "pending") return false;
+  if (order.status === "canceled" || order.status === "refunded") return false;
+
+  order.paymentStatus = "paid";
+  order.updatedAt = at;
+  return true;
 }
 
 /** Libère la réservation d'une commande non payée (session expirée / annulée). */
@@ -197,18 +266,30 @@ export function releaseOrder(
       reservation.status = "released";
     }
   }
+  // Une commande en espèces est ferme sans être payée : son stock est déjà
+  // sorti du catalogue, relâcher la réservation ne suffirait pas à le rendre.
+  // Sans effet sur une commande dont le stock est encore simplement réservé.
+  restockOrder(state, order);
   order.paymentStatus = paymentStatus;
   setOrderStatus(order, "canceled", reason);
   return order;
 }
 
-/** Remet le stock en rayon quand une commande payée est annulée/remboursée par l'admin. */
+/**
+ * Remet le stock en rayon quand une commande ferme est annulée ou remboursée.
+ *
+ * Ne fait rien si le stock n'est pas (ou plus) engagé : sans cette garde, deux
+ * annulations successives — ou une annulation d'une commande jamais confirmée —
+ * créeraient du stock qui n'a jamais existé.
+ */
 export function restockOrder(state: State, order: Order): void {
+  if (!order.stockCommitted) return;
   for (const item of order.items) {
     if (item.kind === "digital") continue;
     const product = state.products.find((p) => p.id === item.productId);
     if (product) product.stock += item.quantity;
   }
+  order.stockCommitted = false;
 }
 
 /**
@@ -262,6 +343,7 @@ export function publicOrderView(order: Order, state?: State) {
     number: order.number,
     createdAt: order.createdAt,
     status: order.status,
+    paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
     items: order.items.map((item) => ({
       sku: item.sku,

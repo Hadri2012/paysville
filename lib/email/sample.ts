@@ -1,4 +1,4 @@
-import type { Order, OrderStatus } from "../types";
+import type { Order, OrderStatus, PaymentMethod } from "../types";
 
 /**
  * Commande fictive servant à l'aperçu des e-mails dans l'administration.
@@ -8,13 +8,17 @@ import type { Order, OrderStatus } from "../types";
  * articles, un fichier téléchargeable, une remise) et ne jamais afficher les
  * coordonnées d'un client réel à l'écran.
  */
-export function sampleOrder(status: OrderStatus): Order {
+export function sampleOrder(status: OrderStatus, paymentMethod: PaymentMethod = "stripe"): Order {
   const createdAt = "2026-08-20T09:24:00.000Z";
 
   // Historique cohérent avec l'étape demandée : la frise et les dates affichées
   // n'auraient aucun sens si l'aperçu prétendait « expédiée » sans passer par
-  // « payée ».
-  const flow: OrderStatus[] = ["awaiting_payment", "paid", "preparing", "ready", "shipped", "delivered"];
+  // « payée ». Une commande en espèces, elle, ne passe jamais par « paid » —
+  // voir `lib/orderFlow.ts#isCashConfirmationStep`.
+  const flow: OrderStatus[] =
+    paymentMethod === "cash_on_delivery"
+      ? ["awaiting_payment", "preparing", "ready", "shipped", "delivered"]
+      : ["awaiting_payment", "paid", "preparing", "ready", "shipped", "delivered"];
   const upTo = flow.indexOf(status);
   const passed = upTo >= 0 ? flow.slice(0, upTo + 1) : [...flow.slice(0, 2), status];
 
@@ -79,7 +83,13 @@ export function sampleOrder(status: OrderStatus): Order {
     currency: "EUR",
     stripeSessionId: null,
     stripePaymentIntentId: null,
-    paymentStatus: status === "refunded" ? "refunded" : "paid",
+    paymentMethod,
+    paymentStatus:
+      status === "refunded"
+        ? "refunded"
+        : paymentMethod === "cash_on_delivery" && status !== "delivered"
+          ? "pending"
+          : "paid",
     status,
     accessToken: "apercu",
     statusHistory: passed.map((step, index) => ({
@@ -88,6 +98,7 @@ export function sampleOrder(status: OrderStatus): Order {
       note: undefined,
     })),
     consent: { terms: true, termsAt: createdAt, marketing: false },
+    stockCommitted: status !== "awaiting_payment",
     stockWarning: null,
     adminNote: "",
     notifiedStatuses: [],

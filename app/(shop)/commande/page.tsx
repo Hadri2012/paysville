@@ -49,6 +49,7 @@ function CheckoutForm() {
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"stripe" | "cash_on_delivery">("stripe");
   const [promoCode, setPromoCode] = useState("");
   const [testBypassCode, setTestBypassCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -124,6 +125,7 @@ function CheckoutForm() {
     return () => clearTimeout(timer);
   }, [hydrated, form.postalCode, form.city, refreshQuote]);
 
+
   const update = (key: keyof FormState) => (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) => {
@@ -156,7 +158,7 @@ function CheckoutForm() {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, items, promoCode, testBypassCode }),
+        body: JSON.stringify({ ...form, items, promoCode, paymentMethod, testBypassCode }),
       });
       const data = await response.json();
 
@@ -208,6 +210,7 @@ function CheckoutForm() {
   // et la ligne « Livraison » laisse place à la remise par téléchargement.
   const digitalOnly = quote?.digitalOnly === true;
   const shippingKnown = quote?.shippingCovered === true;
+  const cashSelected = paymentMethod === "cash_on_delivery" && quote?.cashOnDeliveryAvailable === true;
 
   return (
     <div className="container stack-lg">
@@ -433,6 +436,48 @@ function CheckoutForm() {
             </fieldset>
           </section>
 
+          {quote?.cashOnDeliveryEnabled ? (
+            <section className="card">
+              <fieldset>
+                <legend>Moyen de paiement</legend>
+                <div className="stack">
+                  <label className="checkbox">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      checked={paymentMethod === "stripe"}
+                      onChange={() => setPaymentMethod("stripe")}
+                    />
+                    <span>Carte bancaire — paiement sécurisé par Stripe</span>
+                  </label>
+                  <label
+                    className="checkbox"
+                    aria-disabled={quote.cashOnDeliveryAvailable === false}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      checked={paymentMethod === "cash_on_delivery"}
+                      disabled={quote.cashOnDeliveryAvailable === false}
+                      onChange={() => setPaymentMethod("cash_on_delivery")}
+                    />
+                    <span>Espèces à la livraison</span>
+                  </label>
+                  {quote.cashOnDeliveryAvailable === false && quote.cashOnDeliveryReason ? (
+                    <p className="hint" style={{ marginLeft: 26 }}>
+                      {quote.cashOnDeliveryReason}
+                    </p>
+                  ) : quote.cashOnDeliveryAvailable === null ? (
+                    <p className="hint" style={{ marginLeft: 26 }}>
+                      Indiquez votre adresse pour savoir si les espèces sont proposées pour
+                      cette livraison.
+                    </p>
+                  ) : null}
+                </div>
+              </fieldset>
+            </section>
+          ) : null}
+
           <section className="card">
             <fieldset>
               <legend>Remarque et validation</legend>
@@ -478,9 +523,10 @@ function CheckoutForm() {
 
                 <p className="small muted">
                   Vos données sont traitées conformément à notre{" "}
-                  <Link href="/confidentialite">politique de confidentialité</Link>.
-                  Le paiement est réalisé sur une page sécurisée Stripe : Hadrishop ne
-                  reçoit jamais votre numéro de carte.
+                  <Link href="/confidentialite">politique de confidentialité</Link>.{" "}
+                  {cashSelected
+                    ? "Vous réglerez en espèces, en main propre, au moment de la livraison : aucun paiement en ligne n'est demandé."
+                    : "Le paiement est réalisé sur une page sécurisée Stripe : Hadrishop ne reçoit jamais votre numéro de carte."}
                 </p>
               </div>
             </fieldset>
@@ -572,12 +618,20 @@ function CheckoutForm() {
             type="submit"
             className="btn btn-primary btn-block btn-lg"
             style={{ marginTop: 18 }}
-            disabled={submitting || quoteLoading || quote?.shippingCovered === false}
+            disabled={
+              submitting ||
+              quoteLoading ||
+              quote?.shippingCovered === false ||
+              (paymentMethod === "cash_on_delivery" && quote?.cashOnDeliveryAvailable !== true)
+            }
           >
             {submitting ? (
               <>
-                <span className="spinner" aria-hidden="true" /> Redirection vers Stripe…
+                <span className="spinner" aria-hidden="true" />{" "}
+                {cashSelected ? "Confirmation…" : "Redirection vers Stripe…"}
               </>
+            ) : cashSelected ? (
+              "Confirmer ma commande"
             ) : (
               "Payer avec Stripe"
             )}
@@ -588,8 +642,9 @@ function CheckoutForm() {
           </p>
           {quote?.hasDigital ? (
             <p className="small muted center" style={{ marginTop: 6 }}>
-              Vos fichiers seront téléchargeables dès le paiement confirmé, depuis la
-              page de confirmation et le suivi de commande.
+              {cashSelected
+                ? "Vos fichiers seront téléchargeables dès la remise du paiement en espèces au livreur, depuis la page de confirmation et le suivi de commande."
+                : "Vos fichiers seront téléchargeables dès le paiement confirmé, depuis la page de confirmation et le suivi de commande."}
             </p>
           ) : null}
           <p className="center" style={{ marginTop: 8 }}>

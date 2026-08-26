@@ -3,7 +3,7 @@ import { NOTIFIED_STATUSES, renderOrderEmail } from "@/lib/email/orderEmails";
 import { sampleOrder } from "@/lib/email/sample";
 import { jsonError, siteUrl } from "@/lib/http";
 import { readState } from "@/lib/store";
-import { ORDER_STATUSES, type OrderStatus } from "@/lib/types";
+import { isPaymentMethod, ORDER_STATUSES, type OrderStatus } from "@/lib/types";
 import { cleanString } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -24,16 +24,19 @@ export async function GET(request: Request): Promise<Response> {
     await requireAdmin();
 
     const url = new URL(request.url);
+    const requestedMethod = cleanString(url.searchParams.get("moyen"), 40);
+    const paymentMethod = isPaymentMethod(requestedMethod) ? requestedMethod : "stripe";
     const requested = cleanString(url.searchParams.get("statut"), 40) as OrderStatus;
+    const defaultStatus = paymentMethod === "cash_on_delivery" ? "preparing" : "paid";
     const status: OrderStatus =
       ORDER_STATUSES.includes(requested) && NOTIFIED_STATUSES.includes(requested)
         ? requested
-        : "paid";
+        : defaultStatus;
 
     const state = await readState();
     const { html } = renderOrderEmail(
       {
-        order: sampleOrder(status),
+        order: sampleOrder(status, paymentMethod),
         settings: state.settings,
         siteUrl: siteUrl(request),
         note:

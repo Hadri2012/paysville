@@ -766,6 +766,10 @@ select {
   accent-color: var(--brand);
   flex: none;
 }
+/* Choix indisponible (ex. espèces au-delà du plafond) : lisible, mais
+   visiblement hors d'atteinte. Le motif s'affiche juste en dessous. */
+.checkbox[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+.checkbox[aria-disabled="true"] input { cursor: not-allowed; }
 
 fieldset {
   border: 0;

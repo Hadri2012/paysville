@@ -2,7 +2,12 @@ import { requireAdmin } from "@/lib/auth";
 import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
 import { notifyOrderStatus } from "@/lib/notify";
-import { releasePromotionUse, restockOrder, setOrderStatus } from "@/lib/orders";
+import {
+  collectCashPayment,
+  releasePromotionUse,
+  restockOrder,
+  setOrderStatus,
+} from "@/lib/orders";
 import { transaction } from "@/lib/store";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/types";
 import { cleanString } from "@/lib/validation";
@@ -33,6 +38,19 @@ export async function PATCH(request: Request, context: Context) {
         found.updatedAt = new Date().toISOString();
       }
 
+      // Encaissement des espèces, indépendant d'un changement de statut : selon
+      // la tournée, l'argent est parfois compté avant que la commande ne soit
+      // marquée livrée (au moment de la remise), parfois après (au retour, à la
+      // caisse). Passer par « delivered » y suffit déjà (voir plus bas) ; ce
+      // geste couvre l'autre ordre.
+      if (body.markCashCollected === true) {
+        if (!collectCashPayment(found)) {
+          throw errors.validation(
+            "Rien à encaisser pour cette commande (déjà réglée, ou annulée).",
+          );
+        }
+      }
+
       if (body.status !== undefined) {
         const status = cleanString(body.status, 40) as OrderStatus;
         if (!ORDER_STATUSES.includes(status)) {
@@ -40,9 +58,14 @@ export async function PATCH(request: Request, context: Context) {
         }
         if (status !== found.status) {
           const wasClosed = CLOSED.includes(found.status);
-          // Annulation / remboursement d'une commande payée : le stock repart en
+          // Annulation / remboursement d'une commande ferme : le stock repart en
           // rayon, et le code promo éventuellement utilisé rend son utilisation.
-          if (CLOSED.includes(status) && !wasClosed && found.paymentStatus === "paid") {
+          //
+          // Le critère est « le stock est engagé », pas « la commande est
+          // payée » : une commande réglée en espèces à la livraison a son stock
+          // hors catalogue sans avoir encore rien encaissé, et l'annuler doit
+          // rendre les articles comme pour n'importe quelle autre.
+          if (CLOSED.includes(status) && !wasClosed && found.stockCommitted) {
             restockOrder(state, found);
             releasePromotionUse(state, found);
           }
@@ -56,6 +79,11 @@ export async function PATCH(request: Request, context: Context) {
             found.paymentStatus = "canceled";
           }
           if (status === "refunded") found.paymentStatus = "refunded";
+          // Commande remise en main propre contre espèces : la livraison *est*
+          // l'encaissement. Laisser la commande « livrée mais impayée » forcerait
+          // la boutique à un second geste pour chaque tournée, qu'elle oublierait
+          // — et fausserait le chiffre d'affaires d'autant.
+          if (status === "delivered") collectCashPayment(found);
           const note = cleanString(body.statusNote, 200);
           setOrderStatus(
             state.orders.find((o) => o.id === id)!,
@@ -98,7 +126,7 @@ export async function DELETE(request: Request, context: Context) {
       const order = state.orders.find((o) => o.id === id);
       if (!order) throw errors.orderNotFound();
 
-      if (order.paymentStatus === "paid" && !CLOSED.includes(order.status)) {
+      if (order.stockCommitted && !CLOSED.includes(order.status)) {
         restockOrder(state, order);
         releasePromotionUse(state, order);
       }

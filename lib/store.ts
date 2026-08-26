@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -152,6 +152,23 @@ function migrate(state: State): State {
       // commande mal formée.
       order.statusHistory ??= [];
       order.notifiedStatuses ??= [...new Set(order.statusHistory.map((e) => e.status))];
+    }
+  }
+
+  // v8 -> v9 : paiement en espèces à la livraison. Tout ce qui est déjà en base
+  // a été payé par carte — c'était le seul moyen possible.
+  //
+  // `stockCommitted` se déduit de l'état réel plutôt que d'être posé à faux :
+  // une commande payée et toujours en cours a bien son stock hors catalogue, et
+  // le marquer libre ferait remettre ces articles en rayon une seconde fois à
+  // la première annulation, gonflant le stock d'autant.
+  if (state.schemaVersion < 9) {
+    for (const order of state.orders) {
+      order.paymentMethod ??= "stripe";
+      order.stockCommitted ??=
+        order.paymentStatus === "paid" &&
+        order.status !== "canceled" &&
+        order.status !== "refunded";
     }
   }
 

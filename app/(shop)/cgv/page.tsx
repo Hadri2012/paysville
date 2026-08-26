@@ -12,7 +12,13 @@ export const metadata: Metadata = {
 
 export default async function TermsPage() {
   const state = await readState();
-  const { legal, currency, defaultShippingFeeCents } = state.settings;
+  const {
+    legal,
+    currency,
+    defaultShippingFeeCents,
+    cashOnDeliveryEnabled,
+    cashOnDeliveryMaxCents,
+  } = state.settings;
   const zones = state.shippingZones.filter((zone) => zone.active);
   const incomplete = !legal.companyName || !legal.address || !legal.email;
 
@@ -170,6 +176,24 @@ export default async function TermsPage() {
           conserve aucune. La commande n&apos;est considérée comme confirmée qu&apos;après
           confirmation du paiement par Stripe.
         </p>
+        {cashOnDeliveryEnabled ? (
+          <p>
+            <strong>Espèces à la livraison.</strong> Pour une commande comportant une
+            livraison physique, le règlement en espèces à la remise peut être choisi à la
+            place du paiement par carte
+            {cashOnDeliveryMaxCents !== null ? (
+              <>
+                {" "}
+                , jusqu&apos;à {formatPrice(cashOnDeliveryMaxCents, currency)} de montant
+                total
+              </>
+            ) : null}
+            . La commande est alors ferme dès sa validation — les articles sont mis en
+            préparation immédiatement — sans qu&apos;aucun montant ne soit prélevé en
+            ligne : la somme indiquée est due en espèces, en main propre, au moment de la
+            livraison.
+          </p>
+        ) : null}
 
         <h2>7. Livraison</h2>
         <p>

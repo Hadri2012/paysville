@@ -1,9 +1,10 @@
 import {
-  ORDER_STATUS_DESCRIPTIONS,
   buildOrderSteps,
   isStoppedStatus,
+  stepDescription,
+  stepLabel,
 } from "@/lib/orderFlow";
-import { ORDER_STATUS_LABELS, type OrderStatus, type OrderStatusEvent } from "@/lib/types";
+import type { OrderStatus, OrderStatusEvent, PaymentMethod } from "@/lib/types";
 
 /**
  * Progression visuelle d'une commande.
@@ -24,11 +25,13 @@ function formatDate(iso: string): string {
 export function OrderTimeline({
   status,
   statusHistory,
+  paymentMethod = "stripe",
 }: {
   status: OrderStatus;
   statusHistory: OrderStatusEvent[];
+  paymentMethod?: PaymentMethod;
 }) {
-  const steps = buildOrderSteps(status, statusHistory);
+  const steps = buildOrderSteps(status, statusHistory, paymentMethod);
   const stopped = isStoppedStatus(status);
 
   return (
@@ -36,7 +39,7 @@ export function OrderTimeline({
       {steps.map((step) => (
         <li key={step.status} className={`order-step is-${step.state}`}>
           <div className="order-step-label">
-            <strong>{ORDER_STATUS_LABELS[step.status]}</strong>
+            <strong>{stepLabel(step.status, paymentMethod, statusHistory)}</strong>
             {step.state === "current" ? (
               <span className={`badge ${stopped ? "badge-danger" : "badge-info"}`}>
                 {stopped ? "Commande arrêtée" : "Étape en cours"}
@@ -49,7 +52,7 @@ export function OrderTimeline({
             <div className="small muted">À venir</div>
           ) : null}
           <div className="small order-step-desc">
-            {ORDER_STATUS_DESCRIPTIONS[step.status]}
+            {stepDescription(step.status, paymentMethod, statusHistory)}
           </div>
           {/* La note porte le détail propre à cette commande (motif d'annulation,
               référence du paiement) : elle complète la description, sans la remplacer. */}

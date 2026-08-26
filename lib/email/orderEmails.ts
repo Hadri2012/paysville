@@ -1,6 +1,11 @@
 import { isDigitalOnly } from "../digital";
 import { formatPrice } from "../money";
-import { ORDER_FLOW, ORDER_STATUS_DESCRIPTIONS, isStoppedStatus } from "../orderFlow";
+import {
+  ORDER_FLOW,
+  ORDER_STATUS_DESCRIPTIONS,
+  isCashConfirmationStep,
+  isStoppedStatus,
+} from "../orderFlow";
 import { ORDER_STATUS_LABELS, type Order, type OrderStatus, type Settings } from "../types";
 import { FONT, PALETTE, button, divider, esc, panel, sectionTitle, shell } from "./layout";
 import type { EmailMessage } from "./transport";
@@ -251,6 +256,26 @@ ${panel(
 )}`;
 }
 
+/**
+ * Rappel du montant à préparer en espèces, tant que la commande en espèces
+ * n'est pas livrée. Affiché à chaque étape et pas seulement à la confirmation :
+ * c'est l'information qu'un client relit juste avant que le livreur ne sonne,
+ * pas seulement le jour de la commande.
+ */
+function cashReminder(order: Order): string {
+  if (order.paymentMethod !== "cash_on_delivery") return "";
+  if (isStoppedStatus(order.status) || order.status === "delivered") return "";
+
+  return `
+${divider()}
+${panel(
+  `<strong style="color:${PALETTE.ink};">À régler à la livraison :</strong> ${esc(
+    formatPrice(order.totalCents, order.currency),
+  )} en espèces, remis en main propre au livreur.`,
+  "warn",
+)}`;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Composition                                                                */
 /* -------------------------------------------------------------------------- */
@@ -261,6 +286,12 @@ ${panel(
  * précision que la frise ne donne pas.
  */
 function intro(order: Order, status: OrderStatus): string {
+  if (isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
+    return `Votre commande est confirmée et va être préparée. Prévoyez ${formatPrice(
+      order.totalCents,
+      order.currency,
+    )} en espèces pour la livraison : c'est le seul règlement demandé, rien n'est prélevé en ligne.`;
+  }
   const base = ORDER_STATUS_DESCRIPTIONS[status];
   if (status === "paid") {
     return isDigitalOnly(order.items)
@@ -271,6 +302,22 @@ function intro(order: Order, status: OrderStatus): string {
     return `${base} Selon votre banque, le montant peut mettre quelques jours à réapparaître sur votre compte.`;
   }
   return base;
+}
+
+/** Titre et objet, adaptés quand cette étape joue le rôle de confirmation de
+ * commande pour un règlement en espèces (voir `intro` ci-dessus). */
+function headline(order: Order, status: OrderStatus): string {
+  if (isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
+    return "Commande confirmée !";
+  }
+  return HEADLINES[status];
+}
+
+function subject(order: Order, status: OrderStatus): string {
+  if (isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
+    return `Merci ! Votre commande ${order.number} est confirmée`;
+  }
+  return SUBJECTS[status](order.number);
 }
 
 export interface OrderEmailContext {
@@ -287,20 +334,24 @@ export function renderOrderEmail(
 ): EmailMessage {
   const trackUrl = `${siteUrl}/suivi`;
   const tone = statusTone(status);
-  const headline = HEADLINES[status];
+  const headlineText = headline(order, status);
   const introText = intro(order, status);
 
   const body = `
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;">
   <tr>
     <td style="background-color:${tone.bg};border-radius:20px;padding:6px 14px;font-family:${FONT};font-size:12px;font-weight:700;color:${tone.fg};letter-spacing:0.02em;">
-      ${esc(ORDER_STATUS_LABELS[status])}
+      ${esc(
+        isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)
+          ? "Commande confirmée"
+          : ORDER_STATUS_LABELS[status],
+      )}
     </td>
   </tr>
 </table>
 
 <h1 class="h1 ink" style="margin:0 0 10px;font-family:${FONT};font-size:26px;line-height:1.25;font-weight:800;color:${PALETTE.ink};letter-spacing:-0.02em;">
-  ${esc(headline)}
+  ${esc(headlineText)}
 </h1>
 
 <p class="ink-2" style="margin:0 0 6px;font-family:${FONT};font-size:15px;line-height:1.65;color:${PALETTE.ink2};">
@@ -338,6 +389,7 @@ ${sectionTitle("Récapitulatif")}
 
 ${itemsTable(order)}
 ${totalsTable(order)}
+${cashReminder(order)}
 
 ${downloadsBlock(order, trackUrl)}
 ${addressBlock(order)}
@@ -352,9 +404,9 @@ ${addressBlock(order)}
 
   return {
     to: order.customer.email,
-    subject: SUBJECTS[status](order.number),
+    subject: subject(order, status),
     html: shell({
-      preheader: `${headline} — ${introText}`,
+      preheader: `${headlineText} — ${introText}`,
       shopName: settings.shopName,
       siteUrl,
       body,
@@ -374,7 +426,7 @@ export function renderOrderText(
   status: OrderStatus = order.status,
 ): string {
   const lines: string[] = [
-    HEADLINES[status],
+    headline(order, status),
     "",
     `Bonjour ${order.customer.firstName},`,
     "",
@@ -403,6 +455,17 @@ export function renderOrderText(
     );
   }
   lines.push(`Total : ${formatPrice(order.totalCents, order.currency)}`);
+
+  if (
+    order.paymentMethod === "cash_on_delivery" &&
+    !isStoppedStatus(order.status) &&
+    order.status !== "delivered"
+  ) {
+    lines.push(
+      "",
+      `À régler à la livraison : ${formatPrice(order.totalCents, order.currency)} en espèces, remis en main propre au livreur.`,
+    );
+  }
 
   if (note) {
     lines.push("", `Message de la boutique : ${note}`);

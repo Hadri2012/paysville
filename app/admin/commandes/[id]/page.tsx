@@ -6,6 +6,7 @@ import { OrderStatusEditor } from "@/components/admin/OrderStatusEditor";
 import { requireAdminPage } from "@/lib/adminGuard";
 import { publicOrderView } from "@/lib/orders";
 import { readState } from "@/lib/store";
+import { PAYMENT_METHOD_LABELS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,8 @@ export default async function AdminOrderPage({
               orderId={order.id}
               status={order.status}
               adminNote={order.adminNote}
+              paymentMethod={order.paymentMethod}
+              paymentStatus={order.paymentStatus}
             />
           </section>
 
@@ -75,26 +78,34 @@ export default async function AdminOrderPage({
           </section>
 
           <section className="card">
-            <h3 className="card-title">Paiement Stripe</h3>
+            <h3 className="card-title">Paiement</h3>
             <dl className="kv">
+              <div>
+                <dt>Moyen</dt>
+                <dd>{PAYMENT_METHOD_LABELS[order.paymentMethod]}</dd>
+              </div>
               <div>
                 <dt>État</dt>
                 <dd>
-                  <PaymentBadge status={order.paymentStatus} />
+                  <PaymentBadge status={order.paymentStatus} paymentMethod={order.paymentMethod} />
                 </dd>
               </div>
-              <div>
-                <dt>Session</dt>
-                <dd className="mono small" style={{ wordBreak: "break-all" }}>
-                  {order.stripeSessionId ?? "—"}
-                </dd>
-              </div>
-              <div>
-                <dt>Payment Intent</dt>
-                <dd className="mono small" style={{ wordBreak: "break-all" }}>
-                  {order.stripePaymentIntentId ?? "—"}
-                </dd>
-              </div>
+              {order.paymentMethod === "stripe" ? (
+                <>
+                  <div>
+                    <dt>Session</dt>
+                    <dd className="mono small" style={{ wordBreak: "break-all" }}>
+                      {order.stripeSessionId ?? "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Payment Intent</dt>
+                    <dd className="mono small" style={{ wordBreak: "break-all" }}>
+                      {order.stripePaymentIntentId ?? "—"}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
               <div>
                 <dt>Consentement CGV</dt>
                 <dd>{order.consent.terms ? "Oui" : "Non"}</dd>
@@ -105,8 +116,9 @@ export default async function AdminOrderPage({
               </div>
             </dl>
             <p className="small muted" style={{ marginTop: 12 }}>
-              Les remboursements s&apos;effectuent depuis le tableau de bord Stripe. Le
-              webhook met alors automatiquement la commande à jour.
+              {order.paymentMethod === "cash_on_delivery"
+                ? "Un remboursement en espèces se gère en dehors du site : passez la commande en « Remboursée » une fois l'argent rendu."
+                : "Les remboursements s'effectuent depuis le tableau de bord Stripe. Le webhook met alors automatiquement la commande à jour."}
             </p>
           </section>
         </aside>

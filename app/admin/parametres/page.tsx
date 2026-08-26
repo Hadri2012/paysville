@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { SettingsManager } from "@/components/admin/SettingsManager";
 import { requireAdminPage } from "@/lib/adminGuard";
 import { siteUrl } from "@/lib/http";
+import { centsToInput } from "@/lib/money";
 import { getStore, readState } from "@/lib/store";
 import { isStripeConfigured, isWebhookConfigured } from "@/lib/stripe";
 
@@ -32,6 +33,11 @@ export default async function AdminSettingsPage() {
         email: state.settings.legal.email,
         phone: state.settings.legal.phone,
         vatNumber: state.settings.legal.vatNumber,
+        cashOnDeliveryEnabled: state.settings.cashOnDeliveryEnabled,
+        cashOnDeliveryMax:
+          state.settings.cashOnDeliveryMaxCents !== null
+            ? centsToInput(state.settings.cashOnDeliveryMaxCents)
+            : "",
       }}
       environment={{
         stripeConfigured: isStripeConfigured(),
