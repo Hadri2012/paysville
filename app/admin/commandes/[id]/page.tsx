@@ -118,7 +118,9 @@ export default async function AdminOrderPage({
             <p className="small muted" style={{ marginTop: 12 }}>
               {order.paymentMethod === "cash_on_delivery"
                 ? "Un remboursement en espèces se gère en dehors du site : passez la commande en « Remboursée » une fois l'argent rendu."
-                : "Les remboursements s'effectuent depuis le tableau de bord Stripe. Le webhook met alors automatiquement la commande à jour."}
+                : order.paymentMethod === "card_on_delivery"
+                  ? "Un remboursement par carte à la livraison se gère en dehors du site (terminal du livreur) : passez la commande en « Remboursée » une fois le remboursement effectué."
+                  : "Les remboursements s'effectuent depuis le tableau de bord Stripe. Le webhook met alors automatiquement la commande à jour."}
             </p>
           </section>
         </aside>

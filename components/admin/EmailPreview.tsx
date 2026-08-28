@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ORDER_STATUS_LABELS, type OrderStatus } from "@/lib/types";
+import { ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS, type OrderStatus, type PaymentMethod } from "@/lib/types";
 
 /**
  * Aperçu des e-mails envoyés aux clients.
@@ -24,13 +24,14 @@ const STEPS: { status: OrderStatus; when: string }[] = [
 
 export function EmailPreview({ configured }: { configured: boolean }) {
   const [status, setStatus] = useState<OrderStatus>("paid");
-  const [cashOnDelivery, setCashOnDelivery] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe");
+  const payOnDelivery = paymentMethod !== "stripe";
   const active = STEPS.find((step) => step.status === status);
-  // Une commande en espèces ne passe jamais par « paid » (voir
-  // `lib/orderFlow.ts#isCashConfirmationStep`) : l'étape n'a rien à montrer
+  // Une commande payable à la livraison ne passe jamais par « paid » (voir
+  // `lib/orderFlow.ts#isDeliveryConfirmationStep`) : l'étape n'a rien à montrer
   // dans ce mode, « En préparation » en tient lieu (c'est elle qui joue le rôle
   // de confirmation de commande).
-  const previewStatus = cashOnDelivery && status === "paid" ? "preparing" : status;
+  const previewStatus = payOnDelivery && status === "paid" ? "preparing" : status;
 
   return (
     <div className="stack-lg">
@@ -64,10 +65,11 @@ export function EmailPreview({ configured }: { configured: boolean }) {
           <h2 className="card-title" style={{ marginBottom: 4 }}>
             Étape à prévisualiser
           </h2>
-          {cashOnDelivery && status === "paid" ? (
+          {payOnDelivery && status === "paid" ? (
             <p className="small muted" style={{ margin: 0 }}>
-              Une commande en espèces ne passe jamais par cette étape : elle saute
-              directement à « En préparation », qui joue alors le rôle de confirmation.
+              Une commande payable à la livraison ne passe jamais par cette étape : elle
+              saute directement à « En préparation », qui joue alors le rôle de
+              confirmation.
             </p>
           ) : active ? (
             <p className="small muted" style={{ margin: 0 }}>{active.when}</p>
@@ -89,21 +91,25 @@ export function EmailPreview({ configured }: { configured: boolean }) {
           ))}
         </div>
 
-        <label className="checkbox" style={{ marginTop: 4 }}>
-          <input
-            type="checkbox"
-            checked={cashOnDelivery}
-            onChange={(event) => setCashOnDelivery(event.target.checked)}
-          />
-          <span>Aperçu pour un règlement en espèces à la livraison</span>
-        </label>
+        <div className="field" style={{ marginTop: 4, maxWidth: 320 }}>
+          <label htmlFor="previewPaymentMethod">Moyen de paiement de l&apos;aperçu</label>
+          <select
+            id="previewPaymentMethod"
+            value={paymentMethod}
+            onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
+          >
+            <option value="stripe">{PAYMENT_METHOD_LABELS.stripe}</option>
+            <option value="cash_on_delivery">{PAYMENT_METHOD_LABELS.cash_on_delivery}</option>
+            <option value="card_on_delivery">{PAYMENT_METHOD_LABELS.card_on_delivery}</option>
+          </select>
+        </div>
       </section>
 
       <section className="card card-flush">
         <iframe
           // La clé force le rechargement du cadre à chaque changement d'étape.
-          key={`${previewStatus}-${cashOnDelivery}`}
-          src={`/api/admin/email-preview?statut=${previewStatus}${cashOnDelivery ? "&moyen=cash_on_delivery" : ""}`}
+          key={`${previewStatus}-${paymentMethod}`}
+          src={`/api/admin/email-preview?statut=${previewStatus}&moyen=${paymentMethod}`}
           title={`Aperçu de l'e-mail « ${ORDER_STATUS_LABELS[previewStatus]} »`}
           style={{
             width: "100%",

@@ -27,7 +27,7 @@ export async function GET(request: Request): Promise<Response> {
     const requestedMethod = cleanString(url.searchParams.get("moyen"), 40);
     const paymentMethod = isPaymentMethod(requestedMethod) ? requestedMethod : "stripe";
     const requested = cleanString(url.searchParams.get("statut"), 40) as OrderStatus;
-    const defaultStatus = paymentMethod === "cash_on_delivery" ? "preparing" : "paid";
+    const defaultStatus = paymentMethod === "stripe" ? "paid" : "preparing";
     const status: OrderStatus =
       ORDER_STATUSES.includes(requested) && NOTIFIED_STATUSES.includes(requested)
         ? requested

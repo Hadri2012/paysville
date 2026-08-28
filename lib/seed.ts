@@ -208,6 +208,7 @@ export function initialState(): State {
       // fois la boutique prête à encaisser du liquide à la remise.
       cashOnDeliveryEnabled: false,
       cashOnDeliveryMaxCents: 15000,
+      cardOnDeliveryEnabled: false,
       legal: {
         companyName: "",
         address: "",

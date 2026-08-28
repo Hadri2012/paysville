@@ -41,16 +41,17 @@ export default async function ConfirmationPage({
   }
 
   const paid = order.paymentStatus === "paid";
-  // Une commande en espèces n'est jamais « paid » avant la livraison (voir
-  // `confirmCashOnDelivery`) : elle est confirmée dès qu'elle a quitté « en
-  // attente de paiement » sans avoir été annulée. Une carte réglée en ligne, à
-  // l'inverse, ne l'est que par `paymentStatus === "paid"` — le simple fait
-  // d'atteindre cette page ne vaut jamais preuve de paiement.
-  const cashConfirmed =
-    order.paymentMethod === "cash_on_delivery" &&
+  // Une commande payable à la livraison (espèces ou carte) n'est jamais « paid »
+  // avant la livraison (voir `confirmDeliveryOrder`) : elle est confirmée dès
+  // qu'elle a quitté « en attente de paiement » sans avoir été annulée. Une
+  // carte réglée en ligne, à l'inverse, ne l'est que par
+  // `paymentStatus === "paid"` — le simple fait d'atteindre cette page ne vaut
+  // jamais preuve de paiement.
+  const deliveryConfirmed =
+    order.paymentMethod !== "stripe" &&
     order.status !== "awaiting_payment" &&
     order.status !== "canceled";
-  const confirmed = paid || cashConfirmed;
+  const confirmed = paid || deliveryConfirmed;
   const failed = order.paymentStatus === "failed" || order.paymentStatus === "canceled";
 
   return (
@@ -59,7 +60,7 @@ export default async function ConfirmationPage({
         {confirmed ? <ClearCartOnMount /> : null}
         {!confirmed && !failed ? <AutoRefresh /> : null}
 
-        {cashConfirmed ? (
+        {deliveryConfirmed ? (
           <div className="card center" style={{ background: "var(--success-soft)", borderColor: "#abefc6" }}>
             <div style={{ fontSize: "2.4rem" }} aria-hidden="true">
               🎉
@@ -67,7 +68,10 @@ export default async function ConfirmationPage({
             <h1 style={{ marginBottom: 6 }}>Commande confirmée !</h1>
             <p style={{ margin: 0 }}>
               Vos articles sont en cours de préparation. Prévoyez{" "}
-              <strong>{formatPrice(order.totalCents, order.currency)}</strong> en espèces
+              <strong>{formatPrice(order.totalCents, order.currency)}</strong>{" "}
+              {order.paymentMethod === "card_on_delivery"
+                ? "à régler par carte, sur le terminal du livreur"
+                : "en espèces"}{" "}
               pour la livraison. Conservez votre numéro de commande{" "}
               <strong className="mono">{order.number}</strong> : il vous permet de suivre
               votre commande à tout moment.
@@ -112,8 +116,9 @@ export default async function ConfirmationPage({
             votre adresse e-mail.
           </p>
           <p style={{ marginBottom: 0 }}>
-            Hadrishop ne conserve aucune donnée bancaire : le paiement a été traité par
-            Stripe.
+            {order.paymentMethod === "stripe"
+              ? "Hadrishop ne conserve aucune donnée bancaire : le paiement a été traité par Stripe."
+              : "Hadrishop ne conserve aucune donnée bancaire : aucun paiement en ligne n'a eu lieu pour cette commande."}
           </p>
         </div>
 

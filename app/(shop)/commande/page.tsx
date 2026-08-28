@@ -7,6 +7,7 @@ import { useCart } from "@/components/CartProvider";
 import { readStoredPromo } from "@/lib/clientPromo";
 import { formatPrice } from "@/lib/money";
 import type { Quote } from "@/lib/shop";
+import type { PaymentMethod } from "@/lib/types";
 
 interface FormState {
   firstName: string;
@@ -49,7 +50,7 @@ function CheckoutForm() {
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"stripe" | "cash_on_delivery">("stripe");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe");
   const [promoCode, setPromoCode] = useState("");
   const [testBypassCode, setTestBypassCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -210,7 +211,15 @@ function CheckoutForm() {
   // et la ligne « Livraison » laisse place à la remise par téléchargement.
   const digitalOnly = quote?.digitalOnly === true;
   const shippingKnown = quote?.shippingCovered === true;
-  const cashSelected = paymentMethod === "cash_on_delivery" && quote?.cashOnDeliveryAvailable === true;
+  const deliveryPaymentAvailable = (method: PaymentMethod): boolean | null =>
+    method === "cash_on_delivery"
+      ? (quote?.cashOnDeliveryAvailable ?? null)
+      : method === "card_on_delivery"
+        ? (quote?.cardOnDeliveryAvailable ?? null)
+        : null;
+  const deliverySelected =
+    paymentMethod !== "stripe" && deliveryPaymentAvailable(paymentMethod) === true;
+  const showPaymentMethods = quote?.cashOnDeliveryEnabled || quote?.cardOnDeliveryEnabled;
 
   return (
     <div className="container stack-lg">
@@ -436,7 +445,7 @@ function CheckoutForm() {
             </fieldset>
           </section>
 
-          {quote?.cashOnDeliveryEnabled ? (
+          {showPaymentMethods ? (
             <section className="card">
               <fieldset>
                 <legend>Moyen de paiement</legend>
@@ -450,28 +459,61 @@ function CheckoutForm() {
                     />
                     <span>Carte bancaire — paiement sécurisé par Stripe</span>
                   </label>
-                  <label
-                    className="checkbox"
-                    aria-disabled={quote.cashOnDeliveryAvailable === false}
-                  >
-                    <input
-                      type="radio"
-                      name="paymentMethod"
-                      checked={paymentMethod === "cash_on_delivery"}
-                      disabled={quote.cashOnDeliveryAvailable === false}
-                      onChange={() => setPaymentMethod("cash_on_delivery")}
-                    />
-                    <span>Espèces à la livraison</span>
-                  </label>
-                  {quote.cashOnDeliveryAvailable === false && quote.cashOnDeliveryReason ? (
-                    <p className="hint" style={{ marginLeft: 26 }}>
-                      {quote.cashOnDeliveryReason}
-                    </p>
-                  ) : quote.cashOnDeliveryAvailable === null ? (
-                    <p className="hint" style={{ marginLeft: 26 }}>
-                      Indiquez votre adresse pour savoir si les espèces sont proposées pour
-                      cette livraison.
-                    </p>
+
+                  {quote?.cashOnDeliveryEnabled ? (
+                    <>
+                      <label
+                        className="checkbox"
+                        aria-disabled={quote.cashOnDeliveryAvailable === false}
+                      >
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          checked={paymentMethod === "cash_on_delivery"}
+                          disabled={quote.cashOnDeliveryAvailable === false}
+                          onChange={() => setPaymentMethod("cash_on_delivery")}
+                        />
+                        <span>Espèces à la livraison</span>
+                      </label>
+                      {quote.cashOnDeliveryAvailable === false && quote.cashOnDeliveryReason ? (
+                        <p className="hint" style={{ marginLeft: 26 }}>
+                          {quote.cashOnDeliveryReason}
+                        </p>
+                      ) : quote.cashOnDeliveryAvailable === null ? (
+                        <p className="hint" style={{ marginLeft: 26 }}>
+                          Indiquez votre adresse pour savoir si les espèces sont proposées pour
+                          cette livraison.
+                        </p>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {quote?.cardOnDeliveryEnabled ? (
+                    <>
+                      <label
+                        className="checkbox"
+                        aria-disabled={quote.cardOnDeliveryAvailable === false}
+                      >
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          checked={paymentMethod === "card_on_delivery"}
+                          disabled={quote.cardOnDeliveryAvailable === false}
+                          onChange={() => setPaymentMethod("card_on_delivery")}
+                        />
+                        <span>Carte à la livraison — terminal du livreur</span>
+                      </label>
+                      {quote.cardOnDeliveryAvailable === false && quote.cardOnDeliveryReason ? (
+                        <p className="hint" style={{ marginLeft: 26 }}>
+                          {quote.cardOnDeliveryReason}
+                        </p>
+                      ) : quote.cardOnDeliveryAvailable === null ? (
+                        <p className="hint" style={{ marginLeft: 26 }}>
+                          Indiquez votre adresse pour savoir si le paiement par carte à la
+                          livraison est proposé pour cette livraison.
+                        </p>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               </fieldset>
@@ -524,9 +566,11 @@ function CheckoutForm() {
                 <p className="small muted">
                   Vos données sont traitées conformément à notre{" "}
                   <Link href="/confidentialite">politique de confidentialité</Link>.{" "}
-                  {cashSelected
+                  {paymentMethod === "cash_on_delivery" && deliverySelected
                     ? "Vous réglerez en espèces, en main propre, au moment de la livraison : aucun paiement en ligne n'est demandé."
-                    : "Le paiement est réalisé sur une page sécurisée Stripe : Hadrishop ne reçoit jamais votre numéro de carte."}
+                    : paymentMethod === "card_on_delivery" && deliverySelected
+                      ? "Vous réglerez par carte sur le terminal du livreur, au moment de la livraison : aucun paiement en ligne n'est demandé."
+                      : "Le paiement est réalisé sur une page sécurisée Stripe : Hadrishop ne reçoit jamais votre numéro de carte."}
                 </p>
               </div>
             </fieldset>
@@ -622,15 +666,15 @@ function CheckoutForm() {
               submitting ||
               quoteLoading ||
               quote?.shippingCovered === false ||
-              (paymentMethod === "cash_on_delivery" && quote?.cashOnDeliveryAvailable !== true)
+              (paymentMethod !== "stripe" && deliveryPaymentAvailable(paymentMethod) !== true)
             }
           >
             {submitting ? (
               <>
                 <span className="spinner" aria-hidden="true" />{" "}
-                {cashSelected ? "Confirmation…" : "Redirection vers Stripe…"}
+                {deliverySelected ? "Confirmation…" : "Redirection vers Stripe…"}
               </>
-            ) : cashSelected ? (
+            ) : deliverySelected ? (
               "Confirmer ma commande"
             ) : (
               "Payer avec Stripe"
@@ -642,8 +686,8 @@ function CheckoutForm() {
           </p>
           {quote?.hasDigital ? (
             <p className="small muted center" style={{ marginTop: 6 }}>
-              {cashSelected
-                ? "Vos fichiers seront téléchargeables dès la remise du paiement en espèces au livreur, depuis la page de confirmation et le suivi de commande."
+              {deliverySelected
+                ? "Vos fichiers seront téléchargeables dès la remise du paiement au livreur, depuis la page de confirmation et le suivi de commande."
                 : "Vos fichiers seront téléchargeables dès le paiement confirmé, depuis la page de confirmation et le suivi de commande."}
             </p>
           ) : null}

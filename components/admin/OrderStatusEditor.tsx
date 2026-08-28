@@ -6,6 +6,7 @@ import { apiCall } from "./apiClient";
 import {
   ORDER_STATUSES,
   ORDER_STATUS_LABELS,
+  isPayOnDeliveryMethod,
   type OrderStatus,
   type PaymentMethod,
   type PaymentStatus,
@@ -84,23 +85,34 @@ export function OrderStatusEditor({
         {busy ? "…" : "Mettre à jour le statut"}
       </button>
 
-      {paymentMethod === "cash_on_delivery" &&
+      {isPayOnDeliveryMethod(paymentMethod) &&
       paymentStatus === "pending" &&
       status !== "canceled" &&
       status !== "refunded" ? (
         <div className="field">
           <span className="hint" style={{ display: "block", marginBottom: 8 }}>
-            Réglée en espèces, pas encore encaissée. Passer la commande à « Livrée »
-            l&apos;enregistre automatiquement ; utilisez ce bouton si l&apos;argent est
-            compté à un autre moment de la tournée.
+            {paymentMethod === "card_on_delivery"
+              ? "Réglée par carte à la livraison, pas encore encaissée."
+              : "Réglée en espèces, pas encore encaissée."}{" "}
+            Passer la commande à « Livrée » l&apos;enregistre automatiquement ; utilisez ce
+            bouton si le paiement est enregistré à un autre moment de la tournée.
           </span>
           <button
             type="button"
             className="btn btn-secondary"
             disabled={busy}
-            onClick={() => save({ markCashCollected: true }, "Paiement en espèces enregistré.")}
+            onClick={() =>
+              save(
+                { markDeliveryPaymentCollected: true },
+                paymentMethod === "card_on_delivery"
+                  ? "Paiement par carte enregistré."
+                  : "Paiement en espèces enregistré.",
+              )
+            }
           >
-            Marquer les espèces comme encaissées
+            {paymentMethod === "card_on_delivery"
+              ? "Marquer le paiement comme encaissé"
+              : "Marquer les espèces comme encaissées"}
           </button>
         </div>
       ) : null}

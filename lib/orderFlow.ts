@@ -1,4 +1,10 @@
-import { ORDER_STATUS_LABELS, type OrderStatus, type OrderStatusEvent, type PaymentMethod } from "./types";
+import {
+  ORDER_STATUS_LABELS,
+  isPayOnDeliveryMethod,
+  type OrderStatus,
+  type OrderStatusEvent,
+  type PaymentMethod,
+} from "./types";
 
 /**
  * Parcours d'une commande, tel qu'il est raconté au client.
@@ -37,21 +43,29 @@ export function isStoppedStatus(status: OrderStatus): boolean {
 }
 
 /**
- * Une commande payable en espèces à la livraison ne passe jamais par l'étape
- * « paid » : rien n'est encaissé avant la remise en main propre (voir
- * `confirmCashOnDelivery` dans `lib/orders.ts`). Elle saute directement à « en
- * préparation », qui joue alors le rôle de confirmation de commande.
+ * Une commande payable à la livraison (espèces ou carte sur le terminal du
+ * livreur) ne passe jamais par l'étape « paid » : rien n'est encaissé avant la
+ * remise en main propre (voir `confirmDeliveryOrder` dans `lib/orders.ts`).
+ * Elle saute directement à « en préparation », qui joue alors le rôle de
+ * confirmation de commande.
  */
-export function isCashConfirmationStep(
+export function isDeliveryConfirmationStep(
   status: OrderStatus,
   paymentMethod: PaymentMethod,
   history: OrderStatusEvent[],
 ): boolean {
   return (
     status === "preparing" &&
-    paymentMethod === "cash_on_delivery" &&
+    isPayOnDeliveryMethod(paymentMethod) &&
     !history.some((event) => event.status === "paid")
   );
+}
+
+/** Comment on désigne, dans une phrase, le règlement à la livraison. */
+function deliveryPaymentPhrase(paymentMethod: PaymentMethod): string {
+  return paymentMethod === "card_on_delivery"
+    ? "par carte au moment de la livraison"
+    : "en espèces au moment de la livraison";
 }
 
 /**
@@ -67,8 +81,8 @@ export function stepLabel(
   // Distinct du libellé de « preparing » ci-dessous : les deux étapes
   // partagent leur date (voir `buildOrderSteps`), un même intitulé donnerait
   // l'impression d'une ligne dupliquée plutôt que de deux étapes.
-  if (status === "paid" && paymentMethod === "cash_on_delivery") return "Commande enregistrée";
-  if (isCashConfirmationStep(status, paymentMethod, history)) return "Commande confirmée";
+  if (status === "paid" && isPayOnDeliveryMethod(paymentMethod)) return "Commande enregistrée";
+  if (isDeliveryConfirmationStep(status, paymentMethod, history)) return "Commande confirmée";
   return ORDER_STATUS_LABELS[status];
 }
 
@@ -77,11 +91,11 @@ export function stepDescription(
   paymentMethod: PaymentMethod,
   history: OrderStatusEvent[],
 ): string {
-  if (status === "paid" && paymentMethod === "cash_on_delivery") {
-    return "Commande enregistrée. Vous réglerez en espèces au moment de la livraison.";
+  if (status === "paid" && isPayOnDeliveryMethod(paymentMethod)) {
+    return `Commande enregistrée. Vous réglerez ${deliveryPaymentPhrase(paymentMethod)}.`;
   }
-  if (isCashConfirmationStep(status, paymentMethod, history)) {
-    return "Commande confirmée, vos articles sont en cours d'impression et de préparation. Vous réglerez en espèces au moment de la livraison.";
+  if (isDeliveryConfirmationStep(status, paymentMethod, history)) {
+    return `Commande confirmée, vos articles sont en cours d'impression et de préparation. Vous réglerez ${deliveryPaymentPhrase(paymentMethod)}.`;
   }
   return ORDER_STATUS_DESCRIPTIONS[status];
 }
@@ -109,14 +123,14 @@ export function buildOrderSteps(
     if (!reached.has(event.status)) reached.set(event.status, event);
   }
 
-  // Une commande en espèces n'a pas d'événement « paid » : elle saute
-  // directement à « preparing », qui se produit au même instant que ce que
-  // « paid » représenterait. Lui emprunter sa date évite une étape « faite »
+  // Une commande payable à la livraison n'a pas d'événement « paid » : elle
+  // saute directement à « preparing », qui se produit au même instant que ce
+  // que « paid » représenterait. Lui emprunter sa date évite une étape « faite »
   // affichée sans aucune date, ce qui se lirait comme une anomalie. La note,
   // elle, n'est pas reprise : elle appartient à l'étape qui l'a réellement
   // portée (« preparing ») — la dupliquer sur les deux lignes lirait comme une
   // erreur de copier-coller, pas comme deux étapes distinctes.
-  if (paymentMethod === "cash_on_delivery" && !reached.has("paid") && reached.has("preparing")) {
+  if (isPayOnDeliveryMethod(paymentMethod) && !reached.has("paid") && reached.has("preparing")) {
     const preparingEvent = reached.get("preparing")!;
     reached.set("paid", { status: "paid", at: preparingEvent.at });
   }

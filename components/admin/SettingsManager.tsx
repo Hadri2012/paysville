@@ -14,6 +14,7 @@ export interface SettingsForm {
   cashOnDeliveryEnabled: boolean;
   /** Chaîne d'affichage (« 150,00 »), vide = aucun plafond. */
   cashOnDeliveryMax: string;
+  cardOnDeliveryEnabled: boolean;
 }
 
 export function SettingsManager({
@@ -149,6 +150,27 @@ export function SettingsManager({
             </span>
           </div>
         </div>
+
+        <h2 className="card-title">Paiement par carte à la livraison</h2>
+        <p className="small muted" style={{ marginTop: -8 }}>
+          Le client règle par carte sur le terminal de paiement du livreur, à la remise.
+          Comme pour les espèces, la commande est confirmée et son stock retiré du
+          catalogue dès sa validation — avant tout encaissement. Aucun plafond : un
+          terminal encaisse n&apos;importe quel montant.
+        </p>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.cardOnDeliveryEnabled}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                cardOnDeliveryEnabled: event.target.checked,
+              }))
+            }
+          />
+          <span>Proposer le paiement par carte à la livraison</span>
+        </label>
 
         <div>
           <button type="submit" className="btn btn-primary" disabled={busy}>

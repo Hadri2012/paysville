@@ -3,7 +3,7 @@ import { errors } from "@/lib/errors";
 import { assertSameOrigin, handle, jsonOk, readJson } from "@/lib/http";
 import { notifyOrderStatus } from "@/lib/notify";
 import {
-  collectCashPayment,
+  collectDeliveryPayment,
   releasePromotionUse,
   restockOrder,
   setOrderStatus,
@@ -38,13 +38,13 @@ export async function PATCH(request: Request, context: Context) {
         found.updatedAt = new Date().toISOString();
       }
 
-      // Encaissement des espèces, indépendant d'un changement de statut : selon
-      // la tournée, l'argent est parfois compté avant que la commande ne soit
-      // marquée livrée (au moment de la remise), parfois après (au retour, à la
-      // caisse). Passer par « delivered » y suffit déjà (voir plus bas) ; ce
-      // geste couvre l'autre ordre.
-      if (body.markCashCollected === true) {
-        if (!collectCashPayment(found)) {
+      // Encaissement à la livraison (espèces ou carte sur le terminal), indépendant
+      // d'un changement de statut : selon la tournée, l'argent est parfois compté
+      // avant que la commande ne soit marquée livrée (au moment de la remise),
+      // parfois après (au retour, à la caisse). Passer par « delivered » y suffit
+      // déjà (voir plus bas) ; ce geste couvre l'autre ordre.
+      if (body.markDeliveryPaymentCollected === true) {
+        if (!collectDeliveryPayment(found)) {
           throw errors.validation(
             "Rien à encaisser pour cette commande (déjà réglée, ou annulée).",
           );
@@ -79,11 +79,12 @@ export async function PATCH(request: Request, context: Context) {
             found.paymentStatus = "canceled";
           }
           if (status === "refunded") found.paymentStatus = "refunded";
-          // Commande remise en main propre contre espèces : la livraison *est*
-          // l'encaissement. Laisser la commande « livrée mais impayée » forcerait
-          // la boutique à un second geste pour chaque tournée, qu'elle oublierait
-          // — et fausserait le chiffre d'affaires d'autant.
-          if (status === "delivered") collectCashPayment(found);
+          // Commande remise en main propre contre espèces ou carte sur le
+          // terminal du livreur : la livraison *est* l'encaissement. Laisser la
+          // commande « livrée mais impayée » forcerait la boutique à un second
+          // geste pour chaque tournée, qu'elle oublierait — et fausserait le
+          // chiffre d'affaires d'autant.
+          if (status === "delivered") collectDeliveryPayment(found);
           const note = cleanString(body.statusNote, 200);
           setOrderStatus(
             state.orders.find((o) => o.id === id)!,

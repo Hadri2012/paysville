@@ -2,19 +2,35 @@ import { assertSameOrigin, handle, jsonOk, limit, limitGlobal, readJson, siteUrl
 import { errors } from "@/lib/errors";
 import { notifyOrderStatus } from "@/lib/notify";
 import {
-  confirmCashOnDelivery,
+  confirmDeliveryOrder,
   confirmOrderPayment,
   createPendingOrder,
   releaseOrder,
 } from "@/lib/orders";
-import { buildQuote, sweepReservations } from "@/lib/shop";
+import { buildQuote, sweepReservations, type Quote } from "@/lib/shop";
 import { readState, transaction } from "@/lib/store";
 import { createCheckoutSession, isStripeConfigured } from "@/lib/stripe";
 import { verifyTestBypassCode } from "@/lib/testBypass";
-import { isPaymentMethod, type PaymentMethod } from "@/lib/types";
+import { isPayOnDeliveryMethod, isPaymentMethod, type PaymentMethod } from "@/lib/types";
 import { cleanString, parseCartItems, parseCheckoutIdentity } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * La disponibilité d'un moyen de paiement à la livraison n'est pas une
+ * propriété du panier (comme le stock ou la zone de livraison) : `buildQuote`
+ * ne la fait donc jamais échouer elle-même, il faut la vérifier ici, pour ce
+ * choix précis du client. Lève l'erreur adaptée au moyen demandé, ou ne fait
+ * rien si `stripe` (rien à vérifier) ou si le moyen est bien disponible.
+ */
+function assertDeliveryPaymentAvailable(paymentMethod: PaymentMethod, quote: Quote): void {
+  if (paymentMethod === "cash_on_delivery" && quote.cashOnDeliveryAvailable !== true) {
+    throw errors.cashOnDeliveryNotAvailable(quote.cashOnDeliveryReason ?? undefined);
+  }
+  if (paymentMethod === "card_on_delivery" && quote.cardOnDeliveryAvailable !== true) {
+    throw errors.cardOnDeliveryNotAvailable(quote.cardOnDeliveryReason ?? undefined);
+  }
+}
 
 /**
  * Création d'une commande + session Stripe Checkout.
@@ -78,13 +94,7 @@ export async function POST(request: Request) {
       strict: true,
     });
 
-    // La disponibilité du paiement en espèces n'est pas une propriété du panier
-    // (comme le stock ou la zone de livraison) : `buildQuote` ne la fait donc
-    // jamais échouer elle-même, il faut la vérifier ici, pour ce choix précis du
-    // client.
-    if (paymentMethod === "cash_on_delivery" && preCheckQuote.cashOnDeliveryAvailable !== true) {
-      throw errors.cashOnDeliveryNotAvailable(preCheckQuote.cashOnDeliveryReason ?? undefined);
-    }
+    assertDeliveryPaymentAvailable(paymentMethod, preCheckQuote);
 
     if (paymentMethod === "stripe" && !bypass && !isStripeConfigured()) {
       throw errors.stripeNotConfigured();
@@ -101,22 +111,20 @@ export async function POST(request: Request) {
         strict: true,
       });
       if (quote.lines.length === 0) throw errors.emptyCart();
-      if (paymentMethod === "cash_on_delivery" && quote.cashOnDeliveryAvailable !== true) {
-        throw errors.cashOnDeliveryNotAvailable(quote.cashOnDeliveryReason ?? undefined);
-      }
+      assertDeliveryPaymentAvailable(paymentMethod, quote);
       return {
         order: createPendingOrder(state, { quote, identity, paymentMethod }),
         reservationMinutes: state.settings.reservationMinutes,
       };
     });
 
-    if (paymentMethod === "cash_on_delivery") {
+    if (isPayOnDeliveryMethod(paymentMethod)) {
       await transaction((state) => {
         sweepReservations(state);
-        confirmCashOnDelivery(state, order.id);
+        confirmDeliveryOrder(state, order.id);
       });
       // La commande passe directement « en préparation » (voir
-      // `confirmCashOnDelivery`) : c'est cette étape, et non « paid » — jamais
+      // `confirmDeliveryOrder`) : c'est cette étape, et non « paid » — jamais
       // atteinte pour ce moyen de paiement —, qui déclenche le message de
       // confirmation au client.
       await notifyOrderStatus(order.id, "preparing");

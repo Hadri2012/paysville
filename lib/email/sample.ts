@@ -1,4 +1,4 @@
-import type { Order, OrderStatus, PaymentMethod } from "../types";
+import { isPayOnDeliveryMethod, type Order, type OrderStatus, type PaymentMethod } from "../types";
 
 /**
  * Commande fictive servant à l'aperçu des e-mails dans l'administration.
@@ -13,12 +13,11 @@ export function sampleOrder(status: OrderStatus, paymentMethod: PaymentMethod = 
 
   // Historique cohérent avec l'étape demandée : la frise et les dates affichées
   // n'auraient aucun sens si l'aperçu prétendait « expédiée » sans passer par
-  // « payée ». Une commande en espèces, elle, ne passe jamais par « paid » —
-  // voir `lib/orderFlow.ts#isCashConfirmationStep`.
-  const flow: OrderStatus[] =
-    paymentMethod === "cash_on_delivery"
-      ? ["awaiting_payment", "preparing", "ready", "shipped", "delivered"]
-      : ["awaiting_payment", "paid", "preparing", "ready", "shipped", "delivered"];
+  // « payée ». Une commande payable à la livraison, elle, ne passe jamais par
+  // « paid » — voir `lib/orderFlow.ts#isDeliveryConfirmationStep`.
+  const flow: OrderStatus[] = isPayOnDeliveryMethod(paymentMethod)
+    ? ["awaiting_payment", "preparing", "ready", "shipped", "delivered"]
+    : ["awaiting_payment", "paid", "preparing", "ready", "shipped", "delivered"];
   const upTo = flow.indexOf(status);
   const passed = upTo >= 0 ? flow.slice(0, upTo + 1) : [...flow.slice(0, 2), status];
 
@@ -87,7 +86,7 @@ export function sampleOrder(status: OrderStatus, paymentMethod: PaymentMethod = 
     paymentStatus:
       status === "refunded"
         ? "refunded"
-        : paymentMethod === "cash_on_delivery" && status !== "delivered"
+        : isPayOnDeliveryMethod(paymentMethod) && status !== "delivered"
           ? "pending"
           : "paid",
     status,

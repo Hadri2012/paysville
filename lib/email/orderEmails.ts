@@ -3,10 +3,16 @@ import { formatPrice } from "../money";
 import {
   ORDER_FLOW,
   ORDER_STATUS_DESCRIPTIONS,
-  isCashConfirmationStep,
+  isDeliveryConfirmationStep,
   isStoppedStatus,
 } from "../orderFlow";
-import { ORDER_STATUS_LABELS, type Order, type OrderStatus, type Settings } from "../types";
+import {
+  ORDER_STATUS_LABELS,
+  isPayOnDeliveryMethod,
+  type Order,
+  type OrderStatus,
+  type Settings,
+} from "../types";
 import { FONT, PALETTE, button, divider, esc, panel, sectionTitle, shell } from "./layout";
 import type { EmailMessage } from "./transport";
 
@@ -257,21 +263,26 @@ ${panel(
 }
 
 /**
- * Rappel du montant à préparer en espèces, tant que la commande en espèces
- * n'est pas livrée. Affiché à chaque étape et pas seulement à la confirmation :
- * c'est l'information qu'un client relit juste avant que le livreur ne sonne,
- * pas seulement le jour de la commande.
+ * Rappel du montant à préparer à la livraison, tant que la commande n'est pas
+ * livrée. Affiché à chaque étape et pas seulement à la confirmation : c'est
+ * l'information qu'un client relit juste avant que le livreur ne sonne, pas
+ * seulement le jour de la commande.
  */
-function cashReminder(order: Order): string {
-  if (order.paymentMethod !== "cash_on_delivery") return "";
+function deliveryReminder(order: Order): string {
+  if (!isPayOnDeliveryMethod(order.paymentMethod)) return "";
   if (isStoppedStatus(order.status) || order.status === "delivered") return "";
+
+  const how =
+    order.paymentMethod === "card_on_delivery"
+      ? "par carte, sur le terminal de paiement du livreur"
+      : "en espèces, remis en main propre au livreur";
 
   return `
 ${divider()}
 ${panel(
   `<strong style="color:${PALETTE.ink};">À régler à la livraison :</strong> ${esc(
     formatPrice(order.totalCents, order.currency),
-  )} en espèces, remis en main propre au livreur.`,
+  )} ${how}.`,
   "warn",
 )}`;
 }
@@ -286,11 +297,12 @@ ${panel(
  * précision que la frise ne donne pas.
  */
 function intro(order: Order, status: OrderStatus): string {
-  if (isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
+  if (isDeliveryConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
+    const how = order.paymentMethod === "card_on_delivery" ? "par carte" : "en espèces";
     return `Votre commande est confirmée et va être préparée. Prévoyez ${formatPrice(
       order.totalCents,
       order.currency,
-    )} en espèces pour la livraison : c'est le seul règlement demandé, rien n'est prélevé en ligne.`;
+    )} ${how} pour la livraison : c'est le seul règlement demandé, rien n'est prélevé en ligne.`;
   }
   const base = ORDER_STATUS_DESCRIPTIONS[status];
   if (status === "paid") {
@@ -307,14 +319,14 @@ function intro(order: Order, status: OrderStatus): string {
 /** Titre et objet, adaptés quand cette étape joue le rôle de confirmation de
  * commande pour un règlement en espèces (voir `intro` ci-dessus). */
 function headline(order: Order, status: OrderStatus): string {
-  if (isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
+  if (isDeliveryConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
     return "Commande confirmée !";
   }
   return HEADLINES[status];
 }
 
 function subject(order: Order, status: OrderStatus): string {
-  if (isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
+  if (isDeliveryConfirmationStep(status, order.paymentMethod, order.statusHistory)) {
     return `Merci ! Votre commande ${order.number} est confirmée`;
   }
   return SUBJECTS[status](order.number);
@@ -342,7 +354,7 @@ export function renderOrderEmail(
   <tr>
     <td style="background-color:${tone.bg};border-radius:20px;padding:6px 14px;font-family:${FONT};font-size:12px;font-weight:700;color:${tone.fg};letter-spacing:0.02em;">
       ${esc(
-        isCashConfirmationStep(status, order.paymentMethod, order.statusHistory)
+        isDeliveryConfirmationStep(status, order.paymentMethod, order.statusHistory)
           ? "Commande confirmée"
           : ORDER_STATUS_LABELS[status],
       )}
@@ -389,7 +401,7 @@ ${sectionTitle("Récapitulatif")}
 
 ${itemsTable(order)}
 ${totalsTable(order)}
-${cashReminder(order)}
+${deliveryReminder(order)}
 
 ${downloadsBlock(order, trackUrl)}
 ${addressBlock(order)}
@@ -457,13 +469,17 @@ export function renderOrderText(
   lines.push(`Total : ${formatPrice(order.totalCents, order.currency)}`);
 
   if (
-    order.paymentMethod === "cash_on_delivery" &&
+    isPayOnDeliveryMethod(order.paymentMethod) &&
     !isStoppedStatus(order.status) &&
     order.status !== "delivered"
   ) {
+    const how =
+      order.paymentMethod === "card_on_delivery"
+        ? "par carte, sur le terminal de paiement du livreur"
+        : "en espèces, remis en main propre au livreur";
     lines.push(
       "",
-      `À régler à la livraison : ${formatPrice(order.totalCents, order.currency)} en espèces, remis en main propre au livreur.`,
+      `À régler à la livraison : ${formatPrice(order.totalCents, order.currency)} ${how}.`,
     );
   }
 

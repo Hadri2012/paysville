@@ -368,6 +368,10 @@ export function updateSettings(state: State, body: Record<string, unknown>): Set
     }
   }
 
+  if (body.cardOnDeliveryEnabled !== undefined) {
+    settings.cardOnDeliveryEnabled = toBoolean(body.cardOnDeliveryEnabled);
+  }
+
   const legalKeys = ["companyName", "address", "email", "phone", "vatNumber"] as const;
   for (const key of legalKeys) {
     if (body[key] !== undefined) {

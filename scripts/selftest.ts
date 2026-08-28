@@ -19,8 +19,8 @@ import { newId } from "../lib/ids";
 import { notifyOrderStatus } from "../lib/notify";
 import {
   MIN_RESERVATION_MINUTES,
-  collectCashPayment,
-  confirmCashOnDelivery,
+  collectDeliveryPayment,
+  confirmDeliveryOrder,
   confirmOrderPayment,
   createPendingOrder,
   publicOrderView,
@@ -495,7 +495,7 @@ async function main() {
       identity,
       paymentMethod: "cash_on_delivery",
     });
-    confirmCashOnDelivery(state, created.id);
+    confirmDeliveryOrder(state, created.id);
     return created;
   });
 
@@ -515,7 +515,7 @@ async function main() {
 
   // Confirmer deux fois ne décompte pas le stock deux fois — même garantie
   // d'idempotence que pour la confirmation Stripe (webhook rejoué).
-  await transaction((state) => confirmCashOnDelivery(state, codOrder.id));
+  await transaction((state) => confirmDeliveryOrder(state, codOrder.id));
   const afterSecondConfirm = await readState();
   check(
     "confirmation en espèces idempotente",
@@ -546,7 +546,7 @@ async function main() {
   // l'administration).
   const codPaidOutcome = await transaction((state) => {
     const order = state.orders.find((o) => o.id === codOrder.id)!;
-    return collectCashPayment(order);
+    return collectDeliveryPayment(order);
   });
   check("encaissement des espèces : premier appel réussit", codPaidOutcome === true);
   check(
@@ -555,14 +555,14 @@ async function main() {
   );
   const codPaidAgain = await transaction((state) => {
     const order = state.orders.find((o) => o.id === codOrder.id)!;
-    return collectCashPayment(order);
+    return collectDeliveryPayment(order);
   });
   check("encaissement des espèces : second appel sans effet (déjà payée)", codPaidAgain === false);
   const codOnCardOrder = await transaction((state) => {
     const order = state.orders.find((o) => o.id === orderA.id)!;
-    return collectCashPayment(order);
+    return collectDeliveryPayment(order);
   });
-  check("collectCashPayment sans effet sur une commande réglée par carte", codOnCardOrder === false);
+  check("collectDeliveryPayment sans effet sur une commande réglée par Stripe", codOnCardOrder === false);
 
   // Annulation d'une commande en espèces jamais payée : le stock doit revenir
   // en rayon exactement comme pour un paiement par carte — le critère est
@@ -580,7 +580,7 @@ async function main() {
       identity,
       paymentMethod: "cash_on_delivery",
     });
-    confirmCashOnDelivery(state, created.id);
+    confirmDeliveryOrder(state, created.id);
     return created;
   });
   await transaction((state) => {
@@ -595,9 +595,144 @@ async function main() {
   );
   const codCanceledOutcome = await transaction((state) => {
     const order = state.orders.find((o) => o.id === codCancelOrder.id)!;
-    return collectCashPayment(order);
+    return collectDeliveryPayment(order);
   });
   check("aucun encaissement possible sur une commande annulée", codCanceledOutcome === false);
+
+  console.log("\n== Paiement par carte à la livraison ==");
+  const cardDisabledQuote = buildQuote(await readState(), {
+    items: [{ productId: p9.id, quantity: 1 }],
+    postalCode: "1435",
+    city: "Corbais",
+  });
+  check(
+    "désactivé par défaut : jamais proposée",
+    cardDisabledQuote.cardOnDeliveryEnabled === false &&
+      cardDisabledQuote.cardOnDeliveryAvailable === false,
+  );
+
+  await transaction((state) => {
+    state.settings.cardOnDeliveryEnabled = true;
+  });
+
+  const stateCardEnabled = await readState();
+  const cardQuote = buildQuote(stateCardEnabled, {
+    items: [{ productId: p9.id, quantity: 1 }],
+    postalCode: "1435",
+    city: "Corbais",
+  });
+  check(
+    // Pas de plafond côté carte : un terminal de paiement encaisse n'importe
+    // quel montant, contrairement aux espèces (voir le test du plafond ci-dessus).
+    "proposée pour un panier physique, adresse couverte, sans plafond",
+    cardQuote.cardOnDeliveryEnabled && cardQuote.cardOnDeliveryAvailable === true,
+  );
+
+  const stockBeforeCard = stateCardEnabled.products.find((p) => p.id === p9.id)!.stock;
+
+  const cardOrder = await transaction((state) => {
+    sweepReservations(state);
+    const quote = buildQuote(state, {
+      items: [{ productId: p9.id, quantity: 1 }],
+      postalCode: "1435",
+      city: "Corbais",
+      strict: true,
+    });
+    const created = createPendingOrder(state, {
+      quote,
+      identity,
+      paymentMethod: "card_on_delivery",
+    });
+    confirmDeliveryOrder(state, created.id);
+    return created;
+  });
+
+  const stateCardOrder = await readState();
+  const confirmedCard = stateCardOrder.orders.find((o) => o.id === cardOrder.id)!;
+  check(
+    "commande carte à la livraison confirmée : « en préparation », jamais « payée »",
+    confirmedCard.status === "preparing" &&
+      confirmedCard.paymentStatus === "pending" &&
+      !confirmedCard.statusHistory.some((event) => event.status === "paid"),
+  );
+  check(
+    "stock retiré du catalogue avant tout encaissement (carte à la livraison)",
+    stateCardOrder.products.find((p) => p.id === p9.id)!.stock === stockBeforeCard - 1,
+  );
+  check("stock marqué engagé (carte à la livraison)", confirmedCard.stockCommitted === true);
+
+  // Idempotence, comme pour Stripe et les espèces.
+  await transaction((state) => confirmDeliveryOrder(state, cardOrder.id));
+  const afterSecondCardConfirm = await readState();
+  check(
+    "confirmation carte à la livraison idempotente",
+    afterSecondCardConfirm.products.find((p) => p.id === p9.id)!.stock === stockBeforeCard - 1,
+  );
+
+  const cardNotifyOutcome = await notifyOrderStatus(cardOrder.id, "preparing");
+  check(
+    "e-mail de confirmation envoyé pour la commande carte à la livraison",
+    cardNotifyOutcome !== "skipped",
+    cardNotifyOutcome,
+  );
+  const cardMessage = renderOrderEmail(
+    { order: confirmedCard, settings: stateCardOrder.settings, siteUrl: "https://exemple.be" },
+    "preparing",
+  );
+  check(
+    "e-mail « carte à la livraison » : confirmation de commande, jamais « paiement confirmé »",
+    cardMessage.html.includes("Commande confirmée") &&
+      !cardMessage.html.includes("Paiement confirmé") &&
+      cardMessage.text.toLowerCase().includes("carte"),
+  );
+
+  const cardPaidOutcome = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === cardOrder.id)!;
+    return collectDeliveryPayment(order);
+  });
+  check("encaissement carte à la livraison : premier appel réussit", cardPaidOutcome === true);
+  check(
+    "encaissement carte à la livraison : commande marquée payée",
+    (await readState()).orders.find((o) => o.id === cardOrder.id)!.paymentStatus === "paid",
+  );
+  const cardPaidAgain = await transaction((state) => {
+    const order = state.orders.find((o) => o.id === cardOrder.id)!;
+    return collectDeliveryPayment(order);
+  });
+  check(
+    "encaissement carte à la livraison : second appel sans effet (déjà payée)",
+    cardPaidAgain === false,
+  );
+
+  // Annulation d'une commande carte à la livraison jamais payée : même retour
+  // en stock qu'une commande en espèces ou payée par Stripe.
+  const cardCancelOrder = await transaction((state) => {
+    sweepReservations(state);
+    const quote = buildQuote(state, {
+      items: [{ productId: p9.id, quantity: 1 }],
+      postalCode: "1435",
+      city: "Corbais",
+      strict: true,
+    });
+    const created = createPendingOrder(state, {
+      quote,
+      identity,
+      paymentMethod: "card_on_delivery",
+    });
+    confirmDeliveryOrder(state, created.id);
+    return created;
+  });
+  const stockBeforeCardCancel = (await readState()).products.find((p) => p.id === p9.id)!.stock;
+  await transaction((state) => {
+    const order = state.orders.find((o) => o.id === cardCancelOrder.id)!;
+    restockOrder(state, order);
+    order.paymentStatus = "canceled";
+    setOrderStatus(order, "canceled", "Annulée pour le test.");
+  });
+  check(
+    "annulation d'une commande carte à la livraison : stock remis en rayon",
+    (await readState()).products.find((p) => p.id === p9.id)!.stock === stockBeforeCardCancel + 1,
+  );
 
   console.log("\n== Expiration de réservation ==");
   const p5 = state4.products.find((p) => p.sku === "P5")!;
@@ -1261,6 +1396,13 @@ async function main() {
       Boolean(digitalQuote.cashOnDeliveryReason),
     digitalQuote.cashOnDeliveryReason ?? "",
   );
+  check(
+    "carte à la livraison indisponible pour un panier entièrement numérique : rien à livrer",
+    digitalQuote.cardOnDeliveryEnabled &&
+      digitalQuote.cardOnDeliveryAvailable === false &&
+      Boolean(digitalQuote.cardOnDeliveryReason),
+    digitalQuote.cardOnDeliveryReason ?? "",
+  );
   const mixedQuote = buildQuote(state10, {
     items: [
       { productId: digitalId, quantity: 1 },
@@ -1276,6 +1418,10 @@ async function main() {
   check(
     "espèces disponibles pour un panier mixte (physique + numérique) livré",
     mixedQuote.cashOnDeliveryAvailable === true,
+  );
+  check(
+    "carte à la livraison disponible pour un panier mixte (physique + numérique) livré",
+    mixedQuote.cardOnDeliveryAvailable === true,
   );
 
   // `isDigitalOnly` est la même fonction utilisée par `buildQuote` (checkout),

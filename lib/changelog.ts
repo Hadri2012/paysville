@@ -43,6 +43,18 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-08-28T11:00:00Z",
+    kind: "nouveaute",
+    title: "Paiement par carte à la livraison",
+    details:
+      "En plus des espèces, le client peut désormais choisir de régler par carte sur le terminal du livreur au moment de la remise, quand la boutique active cette option.",
+    bullets: [
+      "Mêmes conditions que les espèces (livraison physique, zone desservie), mais sans plafond : un terminal de paiement encaisse n'importe quel montant.",
+      "La commande suit exactement le même cycle qu'un règlement en espèces : ferme dès sa validation, encaissée seulement à la livraison — le suivi, l'e-mail de confirmation et l'administration s'y adaptent automatiquement.",
+      "Réglage dans Administration → Paramètres (simple case à cocher, sans plafond à définir) ; encaissement enregistré automatiquement en marquant la commande « Livrée », ou à part via le même bouton que pour les espèces.",
+    ],
+  },
+  {
     at: "2026-08-26T10:00:00Z",
     kind: "nouveaute",
     title: "Paiement en espèces à la livraison",

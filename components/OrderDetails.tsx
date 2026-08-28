@@ -6,6 +6,7 @@ import { formatPrice } from "@/lib/money";
 import type { PublicOrderView } from "@/lib/orders";
 import {
   ORDER_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
   type OrderStatus,
   type PaymentMethod,
@@ -36,15 +37,20 @@ export function PaymentBadge({
 }: {
   status: PaymentStatus;
   /**
-   * Une commande en espèces reste « en attente » jusqu'à la livraison — c'est
-   * l'état normal, pas un problème de paiement. Sans cette distinction, le
-   * badge orange « En attente » se lirait comme une alerte sur une commande
-   * qui suit pourtant son cours normal.
+   * Une commande payable à la livraison (espèces ou carte) reste « en
+   * attente » jusqu'à la livraison — c'est l'état normal, pas un problème de
+   * paiement. Sans cette distinction, le badge orange « En attente » se
+   * lirait comme une alerte sur une commande qui suit pourtant son cours
+   * normal.
    */
   paymentMethod?: PaymentMethod;
 }) {
-  if (status === "pending" && paymentMethod === "cash_on_delivery") {
-    return <span className="badge badge-info">Paiement : espèces à la livraison</span>;
+  if (status === "pending" && paymentMethod && paymentMethod !== "stripe") {
+    return (
+      <span className="badge badge-info">
+        Paiement : {PAYMENT_METHOD_LABELS[paymentMethod].toLowerCase()}
+      </span>
+    );
   }
   const tone: Record<PaymentStatus, string> = {
     pending: "badge-warning",

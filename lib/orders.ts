@@ -1,7 +1,7 @@
 import { orderDownloads } from "./digital";
 import { newId, newToken } from "./ids";
 import { availableStock, sweepReservations, type Quote } from "./shop";
-import type { Order, OrderStatus, PaymentMethod, State } from "./types";
+import { isPayOnDeliveryMethod, type Order, type OrderStatus, type PaymentMethod, type State } from "./types";
 import type { CheckoutIdentity } from "./validation";
 
 /**
@@ -25,7 +25,7 @@ export function nextOrderNumber(state: State, now = new Date()): string {
 export interface CreateOrderInput {
   quote: Quote;
   identity: CheckoutIdentity;
-  /** Défaut : `stripe`. Voir `confirmCashOnDelivery` pour l'autre chemin. */
+  /** Défaut : `stripe`. Voir `confirmDeliveryOrder` pour les autres chemins. */
   paymentMethod?: PaymentMethod;
 }
 
@@ -202,13 +202,14 @@ export function confirmOrderPayment(
 }
 
 /**
- * Valide une commande payable en espèces à la livraison.
+ * Valide une commande payable à la livraison (espèces ou carte sur le terminal
+ * du livreur).
  *
  * Rien n'est encaissé ici : `paymentStatus` reste `pending` jusqu'à la remise en
- * main propre (voir `collectCashPayment`). La commande passe pourtant
+ * main propre (voir `collectDeliveryPayment`). La commande passe pourtant
  * directement « en préparation », et son stock est décompté — c'est tout le
- * sens de ce moyen de paiement : le client s'engage à la commande, la boutique
- * s'engage à préparer, l'argent circule à la fin.
+ * sens de ces moyens de paiement : le client s'engage à la commande, la
+ * boutique s'engage à préparer, l'argent circule à la fin.
  *
  * Elle ne repasse donc jamais par « en attente de paiement », qui décrirait
  * l'inverse de ce qui se passe : ce n'est pas la boutique qui attend avant
@@ -217,31 +218,32 @@ export function confirmOrderPayment(
  * Idempotent, comme la confirmation Stripe : deux validations de la même
  * commande ne décomptent pas le stock deux fois.
  */
-export function confirmCashOnDelivery(state: State, orderId: string): Order | null {
+export function confirmDeliveryOrder(state: State, orderId: string): Order | null {
   const order = state.orders.find((o) => o.id === orderId);
   if (!order) return null;
-  if (order.paymentMethod !== "cash_on_delivery") return order;
+  if (!isPayOnDeliveryMethod(order.paymentMethod)) return order;
   if (order.status !== "awaiting_payment") return order;
 
+  const note =
+    order.paymentMethod === "card_on_delivery"
+      ? "Commande confirmée. Règlement par carte à la livraison."
+      : "Commande confirmée. Règlement en espèces à la livraison.";
   commitOrderStock(state, order, "Réservation expirée avant validation de la commande.");
-  setOrderStatus(
-    state.orders.find((o) => o.id === orderId)!,
-    "preparing",
-    "Commande confirmée. Règlement en espèces à la livraison.",
-  );
+  setOrderStatus(state.orders.find((o) => o.id === orderId)!, "preparing", note);
   return order;
 }
 
 /**
- * Enregistre les espèces remises par le client.
+ * Enregistre le règlement remis par le client au livreur (espèces ou carte sur
+ * le terminal).
  *
  * Séparé du changement d'étape : selon la tournée, l'argent est parfois compté
  * avant que la commande ne soit marquée livrée, parfois après. Renvoie `false`
- * s'il n'y avait rien à encaisser — commande réglée par carte, déjà soldée, ou
+ * s'il n'y avait rien à encaisser — commande réglée par Stripe, déjà soldée, ou
  * annulée.
  */
-export function collectCashPayment(order: Order, at = new Date().toISOString()): boolean {
-  if (order.paymentMethod !== "cash_on_delivery") return false;
+export function collectDeliveryPayment(order: Order, at = new Date().toISOString()): boolean {
+  if (!isPayOnDeliveryMethod(order.paymentMethod)) return false;
   if (order.paymentStatus !== "pending") return false;
   if (order.status === "canceled" || order.status === "refunded") return false;
 
@@ -266,8 +268,9 @@ export function releaseOrder(
       reservation.status = "released";
     }
   }
-  // Une commande en espèces est ferme sans être payée : son stock est déjà
-  // sorti du catalogue, relâcher la réservation ne suffirait pas à le rendre.
+  // Une commande payable à la livraison est ferme sans être payée : son stock
+  // est déjà sorti du catalogue, relâcher la réservation ne suffirait pas à le
+  // rendre.
   // Sans effet sur une commande dont le stock est encore simplement réservé.
   restockOrder(state, order);
   order.paymentStatus = paymentStatus;

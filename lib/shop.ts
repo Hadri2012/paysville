@@ -539,6 +539,16 @@ export interface Quote {
   cashOnDeliveryAvailable: boolean | null;
   /** Pourquoi ce n'est pas proposable, à afficher au client. `null` si ça l'est. */
   cashOnDeliveryReason: string | null;
+  /** Pendant de `cashOnDeliveryEnabled` pour le paiement par carte à la livraison. */
+  cardOnDeliveryEnabled: boolean;
+  /**
+   * Pendant de `cashOnDeliveryAvailable` pour le paiement par carte à la
+   * livraison. Sans plafond associé — un terminal de paiement n'a pas de
+   * monnaie à faire — donc jamais refusé pour une question de montant.
+   */
+  cardOnDeliveryAvailable: boolean | null;
+  /** Pourquoi ce n'est pas proposable, à afficher au client. `null` si ça l'est. */
+  cardOnDeliveryReason: string | null;
   totalCents: number;
   currency: string;
 }
@@ -720,6 +730,22 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
     }
   }
 
+  // Carte à la livraison : même règle que les espèces (adresse couverte,
+  // livraison physique requise), sans plafond puisqu'un terminal de paiement
+  // encaisse n'importe quel montant aussi facilement qu'un autre.
+  const cardOnDeliveryEnabled = state.settings.cardOnDeliveryEnabled;
+  let cardOnDeliveryAvailable: boolean | null = null;
+  let cardOnDeliveryReason: string | null = null;
+  if (!cardOnDeliveryEnabled) {
+    cardOnDeliveryAvailable = false;
+  } else if (digitalOnly) {
+    cardOnDeliveryAvailable = false;
+    cardOnDeliveryReason =
+      "Une commande entièrement numérique n'a pas de livraison : le paiement par carte à la livraison n'a pas d'objet.";
+  } else if (shippingCovered === true) {
+    cardOnDeliveryAvailable = true;
+  }
+
   return {
     lines,
     issues,
@@ -737,6 +763,9 @@ export function buildQuote(state: State, input: QuoteInput, now = Date.now()): Q
     cashOnDeliveryEnabled,
     cashOnDeliveryAvailable,
     cashOnDeliveryReason,
+    cardOnDeliveryEnabled,
+    cardOnDeliveryAvailable,
+    cardOnDeliveryReason,
     totalCents,
     currency: state.settings.currency,
   };

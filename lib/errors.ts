@@ -68,6 +68,12 @@ export const errors = {
       reason ?? "Le paiement en espèces à la livraison n'est pas proposé pour cette commande.",
       400,
     ),
+  cardOnDeliveryNotAvailable: (reason?: string) =>
+    new AppError(
+      "card_on_delivery_not_available",
+      reason ?? "Le paiement par carte à la livraison n'est pas proposé pour cette commande.",
+      400,
+    ),
   stripeNotConfigured: () =>
     new AppError(
       "stripe_not_configured",

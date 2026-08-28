@@ -38,6 +38,7 @@ export default async function AdminSettingsPage() {
           state.settings.cashOnDeliveryMaxCents !== null
             ? centsToInput(state.settings.cashOnDeliveryMaxCents)
             : "",
+        cardOnDeliveryEnabled: state.settings.cardOnDeliveryEnabled,
       }}
       environment={{
         stripeConfigured: isStripeConfigured(),

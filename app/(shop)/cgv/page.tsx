@@ -18,6 +18,7 @@ export default async function TermsPage() {
     defaultShippingFeeCents,
     cashOnDeliveryEnabled,
     cashOnDeliveryMaxCents,
+    cardOnDeliveryEnabled,
   } = state.settings;
   const zones = state.shippingZones.filter((zone) => zone.active);
   const incomplete = !legal.companyName || !legal.address || !legal.email;
@@ -192,6 +193,16 @@ export default async function TermsPage() {
             préparation immédiatement — sans qu&apos;aucun montant ne soit prélevé en
             ligne : la somme indiquée est due en espèces, en main propre, au moment de la
             livraison.
+          </p>
+        ) : null}
+        {cardOnDeliveryEnabled ? (
+          <p>
+            <strong>Carte à la livraison.</strong> Pour une commande comportant une
+            livraison physique, le règlement par carte bancaire sur le terminal de
+            paiement du livreur peut être choisi à la place du paiement en ligne. La
+            commande est alors ferme dès sa validation — les articles sont mis en
+            préparation immédiatement — sans qu&apos;aucun montant ne soit prélevé en
+            ligne : la somme indiquée est due par carte, au moment de la livraison.
           </p>
         ) : null}
 

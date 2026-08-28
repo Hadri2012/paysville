@@ -20,12 +20,26 @@ export type PaymentStatus = "pending" | "paid" | "failed" | "canceled" | "refund
  *
  * `stripe` : carte bancaire, avant préparation — la commande n'est ferme qu'une
  * fois le paiement confirmé.
- * `cash_on_delivery` : espèces remises au livreur. La commande est ferme dès sa
- * validation (le stock part immédiatement), et son `paymentStatus` reste
- * `pending` jusqu'à la remise en main propre. Les deux notions sont donc bien
- * distinctes : « commande confirmée » n'y veut pas dire « commande payée ».
+ * `cash_on_delivery` : espèces remises au livreur. `card_on_delivery` : carte
+ * bancaire payée sur le terminal du livreur. Pour ces deux moyens, la commande
+ * est ferme dès sa validation (le stock part immédiatement), et son
+ * `paymentStatus` reste `pending` jusqu'à la remise en main propre — même s'il
+ * s'agit d'une carte, rien n'est prélevé avant que le livreur ne passe. Les
+ * deux notions sont donc bien distinctes : « commande confirmée » n'y veut pas
+ * dire « commande payée ».
  */
-export type PaymentMethod = "stripe" | "cash_on_delivery";
+export type PaymentMethod = "stripe" | "cash_on_delivery" | "card_on_delivery";
+
+/**
+ * `true` pour tout moyen de paiement réglé au moment de la livraison (espèces
+ * ou carte sur le terminal du livreur), `false` pour `stripe`. Centralise le
+ * test partagé par le devis, le checkout, le cycle de vie de la commande, les
+ * e-mails et l'administration — eux ne distinguent jamais espèces et carte à
+ * la livraison, seulement « payé en ligne d'avance » ou non.
+ */
+export function isPayOnDeliveryMethod(method: PaymentMethod): boolean {
+  return method !== "stripe";
+}
 
 export type PromotionType = "fixed" | "percent";
 
@@ -308,6 +322,16 @@ export interface Settings {
    * encaissé d'avance.
    */
   cashOnDeliveryMaxCents: number | null;
+  /**
+   * Proposer le paiement par carte sur le terminal du livreur.
+   *
+   * Distinct des espèces : pas de monnaie à faire, donc pas de plafond associé
+   * — un terminal encaisse n'importe quel montant aussi facilement qu'un autre.
+   * Désactivé au démarrage pour la même raison que les espèces : c'est une
+   * décision d'organisation (le livreur doit être équipé d'un terminal), pas un
+   * réglage qu'on découvre déjà activé.
+   */
+  cardOnDeliveryEnabled: boolean;
   legal: {
     companyName: string;
     address: string;
@@ -357,6 +381,7 @@ export const PAYMENT_STATUSES = Object.keys(PAYMENT_STATUS_LABELS) as PaymentSta
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   stripe: "Carte bancaire",
   cash_on_delivery: "Espèces à la livraison",
+  card_on_delivery: "Carte à la livraison",
 };
 
 export const PAYMENT_METHODS = Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[];
