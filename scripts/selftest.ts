@@ -1,43 +1,24 @@
 /**
- * Test de la logique métier critique de Hadrishop (stock, réservations, promotions,
- * zones de livraison, calcul serveur des totaux, avis clients).
+ * Test de la logique metier critique de VeloLoc : creation de demande, acceptation,
+ * refus, double reservation, reservation simultanee des deux velos, velo desactive,
+ * formulaire invalide, authentification admin, consultation du statut par le client.
  *
  *   npm run selftest
  */
-import { deleteAsset, readAsset, saveAsset } from "../lib/assets";
+import { findConflictingAcceptedRequest, isBikeCurrentlyRented } from "../lib/availability";
+import { resolveAdminFromToken, login } from "../lib/auth";
+import { updateBike } from "../lib/bikes";
+import { isSafeImageUrl } from "../lib/images";
 import {
-  fileExtension,
-  fileFormats,
-  formatBytes,
-  orderDownloads,
-} from "../lib/digital";
-import { upsertProduct } from "../lib/admin";
-import { newId } from "../lib/ids";
-import { confirmOrderPayment, createPendingOrder, publicOrderView } from "../lib/orders";
-import { cartSuggestions } from "../lib/recommendations";
-import {
-  approvedReviews,
-  clearReviewReports,
-  createReview,
-  frequentThemes,
-  isVerifiedPurchase,
-  reportReview,
-  sanitizeReviewPhotos,
-  setReviewReply,
-  voteReviewHelpful,
-} from "../lib/reviews";
-import {
-  availableStock,
-  buildQuote,
-  listPublicProducts,
-  salesCounts,
-  sortProducts,
-  sweepReservations,
-} from "../lib/shop";
+  acceptRequest,
+  createRentalRequest,
+  deleteRequest,
+  findRequestByNumberAndEmail,
+  findRequestById,
+  refuseRequest,
+} from "../lib/requests";
 import { readState, transaction } from "../lib/store";
-import { MAX_PRODUCT_COLORS, MAX_REVIEW_PHOTOS, type Product } from "../lib/types";
-import { decodeUpload, isGlbFile, newAssetId, sanitizeFileName } from "../lib/uploads";
-import { parseCartItems, parseCheckoutIdentity, type CheckoutIdentity } from "../lib/validation";
+import type { RentalRequest } from "../lib/types";
 
 let failures = 0;
 
@@ -50,895 +31,259 @@ function check(label: string, condition: boolean, extra = ""): void {
   }
 }
 
-function expectThrows(label: string, fn: () => unknown, code?: string): void {
+async function expectThrowsAsync(label: string, fn: () => Promise<unknown>, code?: string): Promise<void> {
   try {
-    fn();
+    await fn();
     failures += 1;
-    console.log(`  FAIL ${label} — aucune erreur levée`);
+    console.log(`  FAIL ${label} — aucune erreur levee`);
   } catch (error) {
     const actual = (error as { code?: string }).code;
     if (code && actual !== code) {
       failures += 1;
-      console.log(`  FAIL ${label} — code ${actual} au lieu de ${code}`);
+      console.log(`  FAIL ${label} — code attendu "${code}", recu "${actual}"`);
     } else {
-      console.log(`  ok   ${label} (${actual})`);
+      console.log(`  ok   ${label}`);
     }
   }
 }
 
-const identity: CheckoutIdentity = {
-  customer: {
-    firstName: "Test",
-    lastName: "Client",
-    email: "test@example.org",
-    phone: "+32470000000",
-  },
-  address: {
-    street: "Rue de la Gare",
-    streetNumber: "1",
-    complement: "",
-    postalCode: "1435",
-    city: "Corbais",
-    country: "Belgique",
-  },
-  note: "",
-  terms: true,
-  marketing: false,
-};
+function futurePeriod(daysFromNow: number, durationHours = 4) {
+  const start = new Date(Date.now() + daysFromNow * 86_400_000);
+  const end = new Date(start.getTime() + durationHours * 3_600_000);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const time = (d: Date) => d.toISOString().slice(11, 16);
+  return {
+    startDate: iso(start),
+    startTime: time(start),
+    endDate: iso(end),
+    endTime: time(end),
+  };
+}
+
+function baseForm(overrides: Record<string, unknown> = {}) {
+  return {
+    bikeKind: "normal",
+    firstName: "Camille",
+    lastName: "Dupont",
+    email: "camille@example.com",
+    phone: "+32 470 12 34 56",
+    message: "Test",
+    terms: true,
+    ...futurePeriod(10),
+    ...overrides,
+  };
+}
 
 async function main() {
-  console.log("\n== Catalogue initial ==");
-  const state0 = await readState();
-  check("13 produits initiaux", state0.products.length === 13, `${state0.products.length}`);
-  const p14 = state0.products.find((p) => p.sku === "P14");
-  check("P14 Presse-savon en rupture", p14?.stock === 0);
-  check(
-    "P2 Porte casque à 2,99 € / stock 3",
-    state0.products.find((p) => p.sku === "P2")?.priceCents === 299 &&
-      state0.products.find((p) => p.sku === "P2")?.stock === 3,
-  );
-  check(
-    "aucun produit de don",
-    !state0.products.some((p) => /don|donation/i.test(p.name)),
-  );
-  check(
-    "zone 1435 configurée avec les 3 communes",
-    state0.shippingZones.some(
-      (z) =>
-        z.postalCode === "1435" &&
-        ["Mont-Saint-Guibert", "Corbais", "Hévillers"].every((c) => z.cities.includes(c)),
-    ),
-  );
+  console.log("== VeloLoc selftest ==");
 
-  console.log("\n== Calcul serveur du panier ==");
-  const p2 = state0.products.find((p) => p.sku === "P2")!;
-  const quote = buildQuote(state0, {
-    items: [{ productId: p2.id, quantity: 2 }],
-    postalCode: "1435",
-    city: "corbais",
+  console.log("\n-- Etat initial --");
+  let state = await readState();
+  check("2 velos initialises", state.bikes.length === 2);
+  check("velo normal actif par defaut", state.bikes.find((b) => b.kind === "normal")?.active === true);
+  check("velo electrique actif par defaut", state.bikes.find((b) => b.kind === "electric")?.active === true);
+  check("aucune demande au demarrage", state.requests.length === 0);
+
+  console.log("\n-- Creation d'une demande : velo normal --");
+  let normalRequest!: RentalRequest;
+  await transaction((s) => {
+    normalRequest = createRentalRequest(s, baseForm({ bikeKind: "normal" }));
   });
-  check("sous-total calculé côté serveur", quote.subtotalCents === 598, `${quote.subtotalCents}`);
-  check("livraison couverte (commune insensible à la casse)", quote.shippingCovered === true);
-  check("total cohérent", quote.totalCents === 598 + quote.shippingCents);
+  check("statut initial = en attente", normalRequest.status === "pending");
+  check("numero de demande genere", /^VL-\d{4}-[A-Z0-9]{6}$/.test(normalRequest.number));
+  check("periode enregistree", normalRequest.startAt < normalRequest.endAt);
 
-  const outside = buildQuote(state0, {
-    items: [{ productId: p2.id, quantity: 1 }],
-    postalCode: "1000",
-    city: "Bruxelles",
+  console.log("\n-- Creation d'une demande : velo electrique --");
+  let electricRequest!: RentalRequest;
+  await transaction((s) => {
+    electricRequest = createRentalRequest(
+      s,
+      baseForm({ bikeKind: "electric", email: "alex@example.com", ...futurePeriod(10) }),
+    );
   });
-  check("adresse hors zone refusée", outside.shippingCovered === false);
-  expectThrows(
-    "commande hors zone bloquée (strict)",
-    () =>
-      buildQuote(state0, {
-        items: [{ productId: p2.id, quantity: 1 }],
-        postalCode: "1000",
-        city: "Bruxelles",
-        strict: true,
-      }),
-    "shipping_not_covered",
-  );
+  check("statut initial = en attente", electricRequest.status === "pending");
+  check("numero different de la demande normale", electricRequest.number !== normalRequest.number);
 
-  expectThrows(
-    "produit en rupture non commandable",
-    () =>
-      buildQuote(state0, {
-        items: [{ productId: p14!.id, quantity: 1 }],
-        strict: true,
-      }),
-    "out_of_stock",
+  console.log("\n-- Formulaire invalide --");
+  await expectThrowsAsync(
+    "prenom trop court",
+    async () => transaction((s) => createRentalRequest(s, baseForm({ firstName: "A" }))),
+    "invalid_request_data",
   );
-
-  console.log("\n== Promotions ==");
-  const promoId = await transaction((state) => {
-    const id = newId();
-    state.promotions.push({
-      id,
-      code: "TEST10",
-      active: true,
-      type: "percent",
-      value: 10,
-      startsAt: null,
-      endsAt: null,
-      minSubtotalCents: null,
-      maxUses: 1,
-      uses: 0,
-      oncePerCustomer: false,
-      archived: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    state.promotions.push({
-      id: newId(),
-      code: "EXPIRE",
-      active: true,
-      type: "fixed",
-      value: 100,
-      startsAt: null,
-      endsAt: new Date(Date.now() - 86_400_000).toISOString(),
-      minSubtotalCents: null,
-      maxUses: null,
-      uses: 0,
-      oncePerCustomer: false,
-      archived: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    return id;
-  });
-
-  const state1 = await readState();
-  const withPromo = buildQuote(state1, {
-    items: [{ productId: p2.id, quantity: 2 }],
-    promoCode: "test10",
-    postalCode: "1435",
-    city: "Corbais",
-  });
-  check("remise 10 % appliquée", withPromo.discountCents === 60, `${withPromo.discountCents}`);
-  expectThrows(
-    "code expiré refusé",
-    () =>
-      buildQuote(state1, {
-        items: [{ productId: p2.id, quantity: 1 }],
-        promoCode: "EXPIRE",
-        strict: true,
-      }),
-    "invalid_promo",
+  await expectThrowsAsync(
+    "e-mail invalide",
+    async () => transaction((s) => createRentalRequest(s, baseForm({ email: "pas-un-email" }))),
+    "invalid_request_data",
   );
-  expectThrows(
-    "code inconnu refusé",
-    () =>
-      buildQuote(state1, {
-        items: [{ productId: p2.id, quantity: 1 }],
-        promoCode: "NIMPORTEQUOI",
-        strict: true,
-      }),
-    "invalid_promo",
+  await expectThrowsAsync(
+    "telephone invalide",
+    async () => transaction((s) => createRentalRequest(s, baseForm({ phone: "abc" }))),
+    "invalid_request_data",
   );
-
-  console.log("\n== Réservation de stock et concurrence ==");
-  const p4 = state1.products.find((p) => p.sku === "P4")!; // stock 2
-  const orderA = await transaction((state) => {
-    const q = buildQuote(state, {
-      items: [{ productId: p4.id, quantity: 2 }],
-      postalCode: "1435",
-      city: "Corbais",
-      strict: true,
-    });
-    return createPendingOrder(state, { quote: q, identity });
-  });
-  check("numéro de commande au format HAD-AAAA-NNNNNN", /^HAD-\d{4}-\d{6}$/.test(orderA.number), orderA.number);
-
-  const state2 = await readState();
-  check(
-    "stock physique inchangé avant paiement",
-    state2.products.find((p) => p.id === p4.id)!.stock === 2,
-  );
-  check("stock disponible tombé à 0 (réservé)", availableStock(state2, p4) === 0);
-  expectThrows(
-    "un second client ne peut pas prendre le dernier exemplaire",
-    () =>
-      buildQuote(state2, {
-        items: [{ productId: p4.id, quantity: 1 }],
-        postalCode: "1435",
-        city: "Corbais",
-        strict: true,
-      }),
-    "out_of_stock",
-  );
-
-  console.log("\n== Confirmation de paiement ==");
-  await transaction((state) =>
-    confirmOrderPayment(state, orderA.id, {
-      sessionId: "cs_test_selftest",
-      paymentIntentId: "pi_test_selftest",
-    }),
-  );
-  const state3 = await readState();
-  check("stock décrémenté après paiement", state3.products.find((p) => p.id === p4.id)!.stock === 0);
-  const confirmed = state3.orders.find((o) => o.id === orderA.id)!;
-  check("statut = paiement confirmé", confirmed.status === "paid" && confirmed.paymentStatus === "paid");
-
-  // Idempotence : rejouer l'événement Stripe ne doit pas décrémenter deux fois.
-  await transaction((state) =>
-    confirmOrderPayment(state, orderA.id, { sessionId: "cs_test_selftest" }),
-  );
-  const state4 = await readState();
-  check(
-    "confirmation idempotente (webhook rejoué)",
-    state4.products.find((p) => p.id === p4.id)!.stock === 0,
-  );
-
-  console.log("\n== Expiration de réservation ==");
-  const p5 = state4.products.find((p) => p.sku === "P5")!;
-  const orderB = await transaction((state) => {
-    const q = buildQuote(state, {
-      items: [{ productId: p5.id, quantity: 3 }],
-      postalCode: "1435",
-      city: "Corbais",
-      strict: true,
-    });
-    return createPendingOrder(state, { quote: q, identity });
-  });
-  check("stock réservé", availableStock(await readState(), p5) === 0);
-
-  await transaction((state) => {
-    const reservation = state.reservations.find((r) => r.orderId === orderB.id)!;
-    reservation.expiresAt = new Date(Date.now() - 60_000).toISOString();
-  });
-  await transaction((state) => sweepReservations(state));
-  const state5 = await readState();
-  check("stock libéré après expiration", availableStock(state5, p5) === 3);
-  const expired = state5.orders.find((o) => o.id === orderB.id)!;
-  check(
-    "commande non payée annulée automatiquement",
-    expired.status === "canceled" && expired.paymentStatus === "canceled",
-  );
-
-  console.log("\n== Compteur de promotion ==");
-  const promo = state5.promotions.find((p) => p.id === promoId)!;
-  check("compteur d'utilisation à 0 (promo non utilisée)", promo.uses === 0);
-
-  console.log("\n== Avis clients ==");
-  // `orderA` (p4) a été payée avec identity.customer.email ; `orderB` (p5) a été
-  // annulée faute de paiement. Le badge doit distinguer les deux.
-  const buyerEmail = identity.customer.email;
-  check(
-    "achat vérifié : commande payée contenant le produit",
-    isVerifiedPurchase(state5, p4.id, buyerEmail),
-  );
-  check(
-    "casse et espaces ignorés dans l'e-mail",
-    isVerifiedPurchase(state5, p4.id, `  ${buyerEmail.toUpperCase()} `),
-  );
-  check(
-    "non vérifié : e-mail inconnu",
-    !isVerifiedPurchase(state5, p4.id, "inconnu@example.org"),
-  );
-  check(
-    "non vérifié : bon e-mail, produit jamais commandé",
-    !isVerifiedPurchase(state5, p2.id, buyerEmail),
-  );
-  // orderB contenait bien p5, mais elle a été annulée faute de paiement.
-  check(
-    "non vérifié : la commande contenant le produit a été annulée",
-    !isVerifiedPurchase(state5, p5.id, buyerEmail),
-  );
-  check("non vérifié : aucun e-mail donné", !isVerifiedPurchase(state5, p4.id, ""));
-
-  const verified = await transaction((state) =>
-    createReview(state, {
-      productId: p4.id,
-      author: "Acheteuse",
-      rating: 5,
-      comment: "Très content de cet achat, la finition est nette.",
-      email: buyerEmail,
-    }),
-  );
-  check("avis d'un acheteur : publié et vérifié", !verified.flagged && verified.verified);
-  check(
-    "avis neuf : aucune réponse, aucun vote",
-    verified.reply === null && verified.helpfulYes === 0 && verified.helpfulNo === 0,
-  );
-
-  const anonymous = await transaction((state) =>
-    createReview(state, {
-      productId: p4.id,
-      author: "Passant",
-      rating: 4,
-      comment: "Objet correct pour le prix, rien à redire.",
-    }),
-  );
-  check("avis sans e-mail : publié, non vérifié", !anonymous.flagged && !anonymous.verified);
-
-  // Réponse de la boutique : écrite, puis retirée par un texte vide.
-  await transaction((state) => {
-    const review = state.reviews.find((r) => r.id === verified.id)!;
-    setReviewReply(review, "  Merci beaucoup pour votre retour !  ");
-  });
-  const withReply = (await readState()).reviews.find((r) => r.id === verified.id)!;
-  check(
-    "réponse enregistrée et détourée",
-    withReply.reply?.text === "Merci beaucoup pour votre retour !",
-  );
-  await transaction((state) => {
-    setReviewReply(state.reviews.find((r) => r.id === verified.id)!, "   ");
-  });
-  check(
-    "réponse retirée par un texte vide",
-    (await readState()).reviews.find((r) => r.id === verified.id)!.reply === null,
-  );
-
-  // Votes d'utilité.
-  await transaction((state) => {
-    const review = state.reviews.find((r) => r.id === verified.id)!;
-    voteReviewHelpful(review, true);
-    voteReviewHelpful(review, true);
-    voteReviewHelpful(review, false);
-  });
-  const voted = (await readState()).reviews.find((r) => r.id === verified.id)!;
-  check("votes comptés séparément", voted.helpfulYes === 2 && voted.helpfulNo === 1);
-
-  // Les avis marqués comme spam ne comptent ni dans la liste ni dans la moyenne.
-  const spam = await transaction((state) =>
-    createReview(state, {
-      productId: p4.id,
-      author: "Bot",
-      rating: 1,
-      comment: "Visitez https://exemple-spam.test pour gagner de l'argent facilement.",
-    }),
-  );
-  check("lien détecté comme spam", spam.flagged);
-  const publicList = approvedReviews(await readState(), p4.id);
-  check(
-    "avis spam absent de la liste publique",
-    publicList.length === 2 && !publicList.some((r) => r.id === spam.id),
-  );
-
-  console.log("\n== Photos et signalements d'avis ==");
-  // Le serveur ne fait confiance à rien de ce que le navigateur envoie.
-  const jpeg = `data:image/jpeg;base64,${"A".repeat(400)}`;
-  check(
-    "photo JPEG acceptée",
-    sanitizeReviewPhotos([jpeg]).length === 1,
-  );
-  check(
-    "SVG refusé (peut porter du script)",
-    sanitizeReviewPhotos(["data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="]).length === 0,
-  );
-  check(
-    "URL distante refusée",
-    sanitizeReviewPhotos(["https://exemple.test/photo.jpg"]).length === 0,
-  );
-  check(
-    "photo trop lourde refusée",
-    sanitizeReviewPhotos([`data:image/jpeg;base64,${"A".repeat(400_000)}`]).length === 0,
-  );
-  check(
-    `pas plus de ${MAX_REVIEW_PHOTOS} photos`,
-    sanitizeReviewPhotos([jpeg, jpeg, jpeg, jpeg]).length === MAX_REVIEW_PHOTOS,
-  );
-  check("valeur non tableau ignorée", sanitizeReviewPhotos("pas un tableau").length === 0);
-
-  await transaction((state) => {
-    const review = state.reviews.find((r) => r.id === verified.id)!;
-    reportReview(review);
-    reportReview(review);
-  });
-  const flaggedByVisitors = (await readState()).reviews.find((r) => r.id === verified.id)!;
-  check("signalements comptés", flaggedByVisitors.reports === 2);
-  check(
-    "un signalement ne masque pas l'avis",
-    !flaggedByVisitors.flagged &&
-      approvedReviews(await readState(), p4.id).some((r) => r.id === verified.id),
-  );
-  await transaction((state) =>
-    clearReviewReports(state.reviews.find((r) => r.id === verified.id)!),
-  );
-  check(
-    "signalements remis à zéro",
-    (await readState()).reviews.find((r) => r.id === verified.id)!.reports === 0,
-  );
-
-  console.log("\n== Points le plus souvent cités ==");
-  const themeProduct = (await readState()).products.find((p) => p.sku === "P6")!;
-  await transaction((state) => {
-    const comments = [
-      "Finition impeccable et objet très solide, je recommande.",
-      "La finition est nette, livraison rapide en prime.",
-      "Solide, bien fini. Livraison rapide elle aussi.",
-      "Un peu petit à mon goût mais la finition reste correcte.",
-    ];
-    for (const [index, comment] of comments.entries()) {
-      createReview(state, {
-        productId: themeProduct.id,
-        author: `Client ${index + 1}`,
-        rating: 4,
-        comment,
-      });
-    }
-  });
-  const themeReviews = approvedReviews(await readState(), themeProduct.id);
-  const themes = frequentThemes(themeReviews, themeProduct.name);
-  const labels = themes.map((t) => t.label);
-  check("« finition » ressort des 4 avis", labels.includes("finition"), labels.join(", "));
-  check("singulier et pluriel regroupés", labels.includes("solide"), labels.join(", "));
-  check(
-    "un mot cité une seule fois est écarté",
-    !labels.includes("petit"),
-    labels.join(", "),
-  );
-  check(
-    "compte des avis distincts, pas des occurrences",
-    themes.find((t) => t.label === "finition")?.reviews === 3,
-    JSON.stringify(themes),
-  );
-  check("aucun mot vide dans le résumé", !labels.some((l) => ["très", "tres", "mais"].includes(l)));
-  check(
-    "résumé muet en dessous de 3 avis",
-    frequentThemes(themeReviews.slice(0, 2), "").length === 0,
-  );
-
-  console.log("\n== Ventes, nouveautés et suggestions de panier ==");
-  const state6 = await readState();
-  const sales = salesCounts(state6);
-  // orderA : 2 exemplaires de P4, payée. orderB : P5, annulée faute de paiement.
-  check("quantités payées comptées", sales.get(p4.id) === 2, `${sales.get(p4.id)}`);
-  check("commande annulée non comptée", (sales.get(p5.id) ?? 0) === 0);
-  const bestSellers = sortProducts(listPublicProducts(state6), "ventes", { sales });
-  check(
-    "le produit vendu passe devant les invendus en stock",
-    bestSellers.filter((p) => p.inStock)[0]?.id === p4.id ||
-      // P4 est en rupture après la vente : il passe alors en fin de liste, ce qui
-      // reste la règle générale du tri.
-      !bestSellers.find((p) => p.id === p4.id)?.inStock,
-  );
-
-  const fresh = await transaction((state) => {
-    const product = state.products.find((p) => p.sku === "P6")!;
-    product.createdAt = new Date().toISOString();
-    const old = state.products.find((p) => p.sku === "P7")!;
-    old.createdAt = new Date(Date.now() - 120 * 86_400_000).toISOString();
-    return { newId: product.id, oldId: old.id };
-  });
-  const state7 = await readState();
-  const catalogue = listPublicProducts(state7);
-  check(
-    "produit récent marqué comme nouveauté",
-    catalogue.find((p) => p.id === fresh.newId)?.isNew === true,
-  );
-  check(
-    "produit ancien non marqué",
-    catalogue.find((p) => p.id === fresh.oldId)?.isNew === false,
-  );
-
-  const suggested = cartSuggestions(state7, [p4.id]);
-  check(
-    "suggestions hors panier et en stock",
-    suggested.length > 0 &&
-      suggested.every((p) => p.id !== p4.id && p.inStock),
-    `${suggested.length}`,
-  );
-  check("panier vide : aucune suggestion", cartSuggestions(state7, []).length === 0);
-
-  console.log("\n== Code promo une fois par client ==");
-  const oncePromoId = await transaction((state) => {
-    const promotion = state.promotions.find((p) => p.id === promoId)!;
-    promotion.oncePerCustomer = true;
-    promotion.maxUses = null;
-    return promotion.id;
-  });
-  const state8 = await readState();
-  // orderA a été payée par identity.customer.email, mais sans ce code.
-  check(
-    "code accepté pour un client qui ne l'a jamais utilisé",
-    buildQuote(state8, {
-      items: [{ productId: p2.id, quantity: 2 }],
-      promoCode: "TEST10",
-      customerEmail: buyerEmail,
-    }).discountCents === 60,
-  );
-  await transaction((state) => {
-    const order = state.orders.find((o) => o.id === orderA.id)!;
-    order.promotionId = oncePromoId;
-  });
-  const state9 = await readState();
-  expectThrows(
-    "code refusé au même client la seconde fois",
-    () =>
-      buildQuote(state9, {
-        items: [{ productId: p2.id, quantity: 2 }],
-        promoCode: "TEST10",
-        customerEmail: buyerEmail,
-        strict: true,
-      }),
-    "invalid_promo",
-  );
-  check(
-    "code accepté pour une autre adresse",
-    buildQuote(state9, {
-      items: [{ productId: p2.id, quantity: 2 }],
-      promoCode: "TEST10",
-      customerEmail: "quelquun.dautre@example.org",
-    }).discountCents === 60,
-  );
-  const anonymousQuote = buildQuote(state9, {
-    items: [{ productId: p2.id, quantity: 2 }],
-    promoCode: "TEST10",
-  });
-  check(
-    "panier sans e-mail : code appliqué mais signalé",
-    anonymousQuote.discountCents === 60 && anonymousQuote.promoOncePerCustomer,
-  );
-
-  console.log("\n== Fichiers numériques : utilitaires ==");
-  check("extension lisible", fileExtension("modele-v2.STL") === "STL");
-  check("extension absente", fileExtension("sans-extension") === "");
-  check(
-    "formats dédoublonnés dans l'ordre",
-    fileFormats([{ name: "a.stl" }, { name: "b.pdf" }, { name: "c.STL" }]).join(",") ===
-      "STL,PDF",
-  );
-  check("taille en Mo", formatBytes(2_100_000) === "2,1 Mo");
-  check("taille en Ko", formatBytes(340_000) === "340 Ko");
-  check(
-    "nom de fichier débarrassé de son chemin",
-    sanitizeFileName("../../etc/passwd") === "passwd",
-  );
-  check("nom vide remplacé", sanitizeFileName("") === "fichier");
-
-  const decoded = decodeUpload(
-    { name: "notice.txt", data: `data:text/plain;base64,${Buffer.from("bonjour").toString("base64")}` },
-    1000,
-  );
-  check(
-    "data-URI décodée avec son type",
-    decoded.name === "notice.txt" &&
-      decoded.contentType === "text/plain" &&
-      decoded.bytes.toString() === "bonjour",
-  );
-  check(
-    "base64 nu accepté, type générique",
-    decodeUpload({ name: "x.bin", data: Buffer.from("ab").toString("base64") }, 100)
-      .contentType === "application/octet-stream",
-  );
-  expectThrows(
-    "fichier trop volumineux refusé",
-    () => decodeUpload({ name: "gros.stl", data: Buffer.alloc(500).toString("base64") }, 100),
-    "validation_error",
-  );
-  expectThrows(
-    "contenu vide refusé",
-    () => decodeUpload({ name: "vide.stl", data: "" }, 100),
-    "validation_error",
-  );
-  check(
-    "en-tête GLB reconnue",
-    isGlbFile(Buffer.concat([Buffer.from("glTF"), Buffer.alloc(20)])),
-  );
-  check("fichier non GLB rejeté", !isGlbFile(Buffer.from("solid ascii stl content")));
-
-  console.log("\n== Magasin d'assets ==");
-  const assetId = newAssetId();
-  await saveAsset(assetId, Buffer.from("contenu du fichier vendu"));
-  const roundTrip = await readAsset(assetId);
-  check("asset relu à l'identique", roundTrip?.toString() === "contenu du fichier vendu");
-  check("identifiant inconnu : rien", (await readAsset(newAssetId())) === null);
-  check("identifiant invalide : rien", (await readAsset("../../etc/passwd")) === null);
-  await deleteAsset(assetId);
-  check("asset supprimé", (await readAsset(assetId)) === null);
-
-  console.log("\n== Produit numérique : vente et remise ==");
-  const digitalAssetId = newAssetId();
-  await saveAsset(digitalAssetId, Buffer.from("STL du porte-casque"));
-  const digitalId = await transaction((state) => {
-    const now = new Date().toISOString();
-    const product: Product = {
-      id: newId(),
-      sku: "DIGI1",
-      slug: "modele-porte-casque",
-      name: "Modèle 3D — Porte casque",
-      description: "Le fichier source à imprimer chez soi.",
-      priceCents: 500,
-      stock: 0,
-      imageUrl: "",
-      active: true,
-      category: "Fichiers",
-      sortOrder: 999,
-      archived: false,
-      kind: "digital",
-      digitalFiles: [
-        {
-          id: digitalAssetId,
-          name: "porte-casque.stl",
-          sizeBytes: 19,
-          contentType: "application/octet-stream",
-          createdAt: now,
-        },
-      ],
-      model3d: null,
-      colors: [],
-      createdAt: now,
-      updatedAt: now,
-    };
-    state.products.push(product);
-    return product.id;
-  });
-
-  const state10 = await readState();
-  const digitalPublic = listPublicProducts(state10).find((p) => p.id === digitalId)!;
-  check(
-    "fichier vendable malgré un stock à zéro",
-    digitalPublic.inStock && digitalPublic.available === 1,
-  );
-  check(
-    "formats et compteur exposés au catalogue",
-    digitalPublic.kind === "digital" &&
-      digitalPublic.fileCount === 1 &&
-      digitalPublic.fileFormats.join(",") === "STL",
-  );
-
-  const digitalQuote = buildQuote(state10, {
-    items: [{ productId: digitalId, quantity: 5 }],
-    postalCode: "9999",
-    city: "Hors zone",
-  });
-  check(
-    "quantité ramenée à un exemplaire",
-    digitalQuote.lines[0]?.quantity === 1 &&
-      digitalQuote.issues.some((issue) => issue.code === "digital_single"),
-  );
-  check(
-    "panier tout numérique : ni frais ni zone à couvrir",
-    digitalQuote.digitalOnly &&
-      digitalQuote.hasDigital &&
-      digitalQuote.shippingCents === 0 &&
-      digitalQuote.shippingCovered === true,
-    `covered=${digitalQuote.shippingCovered}`,
-  );
-  const mixedQuote = buildQuote(state10, {
-    items: [
-      { productId: digitalId, quantity: 1 },
-      { productId: p2.id, quantity: 1 },
-    ],
-    postalCode: "1435",
-    city: "Corbais",
-  });
-  check(
-    "panier mixte : livraison toujours résolue",
-    mixedQuote.hasDigital && !mixedQuote.digitalOnly && mixedQuote.shippingCovered === true,
-  );
-
-  check(
-    "adresse facultative pour une commande de fichiers",
-    parseCheckoutIdentity(
-      {
-        firstName: "Test",
-        lastName: "Client",
-        email: "fichier@example.org",
-        phone: "+32470000000",
-        terms: true,
-      },
-      { requireAddress: false },
-    ).customer.email === "fichier@example.org",
-  );
-  expectThrows(
-    "adresse exigée pour un objet à livrer",
-    () =>
-      parseCheckoutIdentity({
-        firstName: "Test",
-        lastName: "Client",
-        email: "objet@example.org",
-        phone: "+32470000000",
-        terms: true,
-      }),
-    "invalid_customer_data",
-  );
-
-  const digitalOrder = await transaction((state) => {
-    const quote = buildQuote(state, { items: [{ productId: digitalId, quantity: 1 }] });
-    return createPendingOrder(state, { quote, identity });
-  });
-  check(
-    "aucun stock réservé pour un fichier",
-    (await readState()).reservations.find((r) => r.orderId === digitalOrder.id)?.items
-      .length === 0,
-  );
-  check(
-    "avant paiement : aucun téléchargement",
-    orderDownloads(await readState(), digitalOrder).length === 0,
-  );
-
-  await transaction((state) => {
-    confirmOrderPayment(state, digitalOrder.id, {});
-  });
-  const state11 = await readState();
-  const paidDigital = state11.orders.find((o) => o.id === digitalOrder.id)!;
-  const downloads = orderDownloads(state11, paidDigital);
-  check(
-    "après paiement : le fichier est remis",
-    downloads.length === 1 && downloads[0].files[0]?.name === "porte-casque.stl",
-  );
-  check(
-    "le lien porte le jeton de la commande",
-    publicOrderView(paidDigital, state11).downloads[0]?.files[0]?.url.includes(
-      paidDigital.accessToken,
-    ) === true,
-  );
-  check(
-    "vue publique sans état : aucun lien",
-    publicOrderView(paidDigital).downloads.length === 0,
-  );
-  check(
-    "le stock du produit numérique n'a pas bougé",
-    state11.products.find((p) => p.id === digitalId)?.stock === 0,
-  );
-
-  const refunded = await transaction((state) => {
-    const order = state.orders.find((o) => o.id === digitalOrder.id)!;
-    order.status = "refunded";
-    order.paymentStatus = "refunded";
-    return order;
-  });
-  check(
-    "commande remboursée : accès révoqué",
-    orderDownloads(await readState(), refunded).length === 0,
-  );
-  await deleteAsset(digitalAssetId);
-
-  console.log("\n== Couleurs de produit ==");
-  const [noirId, blancId] = await transaction((state) => {
-    const product = state.products.find((p) => p.id === p2.id)!;
-    product.colors = [
-      { id: newId(), name: "Noir", hex: "#111111" },
-      { id: newId(), name: "Blanc", hex: "#f5f5f5" },
-    ];
-    return product.colors.map((c) => c.id);
-  });
-  const state12 = await readState();
-  const p2Public = listPublicProducts(state12).find((p) => p.id === p2.id)!;
-  check(
-    "couleurs exposées au catalogue",
-    p2Public.colors.length === 2 && p2Public.colors.map((c) => c.name).join(",") === "Noir,Blanc",
-  );
-
-  expectThrows(
-    "commande stricte sans couleur refusée",
-    () =>
-      buildQuote(
-        state12,
-        { items: [{ productId: p2.id, quantity: 1 }], strict: true },
+  await expectThrowsAsync(
+    "fin avant le debut",
+    async () =>
+      transaction((s) =>
+        createRentalRequest(s, baseForm({ startDate: "2030-01-10", endDate: "2030-01-09" })),
       ),
-    "color_required",
+    "invalid_request_data",
   );
-  const noColorQuote = buildQuote(state12, {
-    items: [{ productId: p2.id, quantity: 1 }],
+  await expectThrowsAsync(
+    "conditions non acceptees",
+    async () => transaction((s) => createRentalRequest(s, baseForm({ terms: false }))),
+    "invalid_request_data",
+  );
+  await expectThrowsAsync(
+    "type de velo inconnu",
+    async () => transaction((s) => createRentalRequest(s, baseForm({ bikeKind: "trottinette" }))),
+    "invalid_request_data",
+  );
+
+  console.log("\n-- Velo desactive --");
+  await transaction((s) => updateBike(s, "electric", { active: false }));
+  await expectThrowsAsync(
+    "demande refusee pour un velo desactive",
+    async () =>
+      transaction((s) =>
+        createRentalRequest(s, baseForm({ bikeKind: "electric", ...futurePeriod(20) })),
+      ),
+    "bike_unavailable",
+  );
+  await transaction((s) => updateBike(s, "electric", { active: true }));
+  console.log("  ok   velo electrique reactive pour la suite des tests");
+
+  console.log("\n-- Acceptation d'une demande --");
+  await transaction((s) => acceptRequest(s, normalRequest.id));
+  state = await readState();
+  const accepted = findRequestById(state, normalRequest.id)!;
+  check("statut = acceptee", accepted.status === "accepted");
+  check("historique horodate", accepted.statusHistory.at(-1)?.status === "accepted");
+  check(
+    "le velo normal est desormais reserve sur cette periode",
+    isBikeCurrentlyRented(state, "normal", accepted.startAt) === true,
+  );
+
+  console.log("\n-- Refus d'une demande --");
+  let toRefuse!: RentalRequest;
+  await transaction((s) => {
+    toRefuse = createRentalRequest(s, baseForm({ bikeKind: "normal", ...futurePeriod(50) }));
   });
-  check(
-    "sans couleur : ligne retirée avec un message",
-    noColorQuote.lines.length === 0 &&
-      noColorQuote.issues.some((issue) => issue.code === "color_required"),
-  );
+  await transaction((s) => refuseRequest(s, toRefuse.id, "Periode indisponible pour entretien."));
+  state = await readState();
+  const refused = findRequestById(state, toRefuse.id)!;
+  check("statut = refusee", refused.status === "refused");
+  check("commentaire enregistre", refused.adminComment.includes("entretien"));
 
-  const badColorQuote = buildQuote(state12, {
-    items: [{ productId: p2.id, quantity: 1, colorId: "inconnue" }],
+  console.log("\n-- Double reservation du meme velo (chevauchement) --");
+  const overlapPeriod = futurePeriod(100);
+  let firstOverlap!: RentalRequest;
+  let secondOverlap!: RentalRequest;
+  await transaction((s) => {
+    firstOverlap = createRentalRequest(s, baseForm({ bikeKind: "normal", ...overlapPeriod }));
+    secondOverlap = createRentalRequest(
+      s,
+      baseForm({ bikeKind: "normal", email: "autre@example.com", ...overlapPeriod }),
+    );
   });
+  await transaction((s) => acceptRequest(s, firstOverlap.id));
+  await expectThrowsAsync(
+    "la seconde demande, chevauchante, ne peut pas etre acceptee",
+    async () => transaction((s) => acceptRequest(s, secondOverlap.id)),
+    "overlap",
+  );
+  state = await readState();
   check(
-    "couleur inexistante : même refus que l'absence de couleur",
-    badColorQuote.lines.length === 0 &&
-      badColorQuote.issues.some((issue) => issue.code === "color_required"),
+    "la seconde demande reste en attente",
+    findRequestById(state, secondOverlap.id)?.status === "pending",
+  );
+  check(
+    "le conflit est bien detecte par findConflictingAcceptedRequest",
+    findConflictingAcceptedRequest(
+      state,
+      "normal",
+      overlapPeriod.startDate + "T" + overlapPeriod.startTime,
+      overlapPeriod.endDate + "T" + overlapPeriod.endTime,
+    ) !== null,
   );
 
-  const colorQuote = buildQuote(state12, {
-    items: [
-      { productId: p2.id, quantity: 1, colorId: noirId },
-      { productId: p2.id, quantity: 1, colorId: blancId },
-    ],
+  console.log("\n-- Reservation simultanee du velo normal et du velo electrique --");
+  const simulPeriod = futurePeriod(120);
+  let simulNormal!: RentalRequest;
+  let simulElectric!: RentalRequest;
+  await transaction((s) => {
+    simulNormal = createRentalRequest(s, baseForm({ bikeKind: "normal", ...simulPeriod }));
+    simulElectric = createRentalRequest(
+      s,
+      baseForm({ bikeKind: "electric", email: "simul@example.com", ...simulPeriod }),
+    );
   });
+  await transaction((s) => acceptRequest(s, simulNormal.id));
+  await transaction((s) => acceptRequest(s, simulElectric.id));
+  state = await readState();
+  check("le velo normal est accepte sur cette periode", findRequestById(state, simulNormal.id)?.status === "accepted");
   check(
-    "deux couleurs du même produit : deux lignes distinctes",
-    colorQuote.lines.length === 2,
-    `${colorQuote.lines.length}`,
-  );
-  check(
-    "chaque ligne porte le nom de sa couleur",
-    colorQuote.lines.find((l) => l.colorId === noirId)?.colorName === "Noir" &&
-      colorQuote.lines.find((l) => l.colorId === blancId)?.colorName === "Blanc",
+    "le velo electrique est accepte sur la meme periode (ressource distincte)",
+    findRequestById(state, simulElectric.id)?.status === "accepted",
   );
 
-  const mergedColorItems = parseCartItems([
-    { productId: p2.id, quantity: 1, colorId: noirId },
-    { productId: p2.id, quantity: 2, colorId: noirId },
-    { productId: p2.id, quantity: 1, colorId: blancId },
-  ]);
+  console.log("\n-- Authentification admin --");
+  check("aucun jeton = pas d'admin", resolveAdminFromToken(state, undefined) === null);
+  check("jeton inconnu = pas d'admin", resolveAdminFromToken(state, "jeton-invalide") === null);
+
+  process.env.ADMIN_EMAIL = "admin@veloloc.test";
+  process.env.ADMIN_PASSWORD = "mot-de-passe-super-solide";
+  await expectThrowsAsync(
+    "mauvais mot de passe refuse",
+    async () => login("admin@veloloc.test", "mauvais-mot-de-passe"),
+    "invalid_credentials",
+  );
+  const token = await login("admin@veloloc.test", "mot-de-passe-super-solide");
+  state = await readState();
+  const identity = resolveAdminFromToken(state, token);
+  check("connexion admin reussie avec les bons identifiants", identity?.email === "admin@veloloc.test");
+  check("mot de passe jamais stocke en clair", !state.admins.some((a) => a.passwordHash === "mot-de-passe-super-solide"));
+
+  console.log("\n-- Consultation du statut par le client --");
   check(
-    "panier : même couleur fusionnée, couleur différente distincte",
-    mergedColorItems.length === 2 &&
-      mergedColorItems.find((i) => i.colorId === noirId)?.quantity === 3 &&
-      mergedColorItems.find((i) => i.colorId === blancId)?.quantity === 1,
+    "numero + bon e-mail retrouve la demande",
+    findRequestByNumberAndEmail(state, accepted.number, accepted.customer.email)?.id === accepted.id,
+  );
+  check(
+    "numero + mauvais e-mail ne retrouve rien",
+    findRequestByNumberAndEmail(state, accepted.number, "inconnu@example.com") === undefined,
+  );
+  check(
+    "numero inconnu ne retrouve rien",
+    findRequestByNumberAndEmail(state, "VL-2000-000000", accepted.customer.email) === undefined,
   );
 
-  const colorOrder = await transaction((state) => {
-    const quote = buildQuote(state, {
-      items: [{ productId: p2.id, quantity: 1, colorId: noirId }],
-    });
-    return createPendingOrder(state, { quote, identity });
+  console.log("\n-- Gestion des velos --");
+  check("URL http(s) acceptee", isSafeImageUrl("https://example.com/velo.jpg") === true);
+  check("URL data:image acceptee", isSafeImageUrl("data:image/png;base64,AAAA") === true);
+  check("schema javascript: refuse", isSafeImageUrl("javascript:alert(1)") === false);
+
+  console.log("\n-- Suppression d'une demande --");
+  await transaction((s) => {
+    deleteRequest(s, toRefuse.id);
   });
-  check(
-    "la couleur est enregistrée sur l'article de commande",
-    colorOrder.items[0]?.colorId === noirId && colorOrder.items[0]?.colorName === "Noir",
-  );
-  check(
-    "la vue publique affiche le nom de la couleur",
-    publicOrderView(colorOrder).items[0]?.colorName === "Noir",
-  );
-
-  const withDuplicateColors = upsertProduct(await readState(), {
-    sku: "COLTEST",
-    name: "Test couleurs",
-    price: "9,99",
-    stock: "5",
-    colors: [
-      { name: "Rouge", hex: "#ff0000" },
-      { name: "rouge", hex: "#00ff00" }, // doublon (casse) : ignoré
-      { name: "Vert", hex: "pas-un-hex" }, // hex invalide : gris par défaut
-      { name: "" }, // nom vide : ignoré
-    ],
-  });
-  check(
-    "doublon de nom ignoré",
-    withDuplicateColors.colors.filter((c) => c.name.toLowerCase() === "rouge").length === 1,
-  );
-  check(
-    "hex invalide retombe sur le gris par défaut",
-    withDuplicateColors.colors.find((c) => c.name === "Vert")?.hex === "#6b7280",
-  );
-  check("nom vide ignoré", !withDuplicateColors.colors.some((c) => c.name === ""));
-  check(
-    "seules les entrées valides sont conservées",
-    withDuplicateColors.colors.length === 2,
-    `${withDuplicateColors.colors.length}`,
+  state = await readState();
+  check("la demande supprimee n'existe plus", findRequestById(state, toRefuse.id) === undefined);
+  await expectThrowsAsync(
+    "supprimer une demande inexistante echoue",
+    async () => transaction((s) => deleteRequest(s, toRefuse.id)),
+    "request_not_found",
   );
 
-  // Le plafond s'applique aux entrées reçues, avant tri : au-delà, le reste
-  // n'est même pas examiné (comme pour les fichiers numériques).
-  const withTooManyColors = upsertProduct(await readState(), {
-    sku: "COLTEST3",
-    name: "Trop de couleurs",
-    price: "9,99",
-    stock: "5",
-    colors: Array.from({ length: MAX_PRODUCT_COLORS + 5 }, (_, i) => ({
-      name: `Couleur ${i}`,
-      hex: "#123456",
-    })),
-  });
-  check(
-    `pas plus de ${MAX_PRODUCT_COLORS} couleurs`,
-    withTooManyColors.colors.length === MAX_PRODUCT_COLORS,
-    `${withTooManyColors.colors.length}`,
-  );
-
-  const digitalWithColors = upsertProduct(await readState(), {
-    sku: "COLTEST2",
-    name: "Fichier avec couleurs par erreur",
-    price: "9,99",
-    kind: "digital",
-    colors: [{ name: "Noir", hex: "#111111" }],
-  });
-  check(
-    "un produit numérique ne garde aucune couleur",
-    digitalWithColors.colors.length === 0,
-  );
-
-  console.log(
-    failures === 0
-      ? "\n✅ Tous les contrôles sont passés.\n"
-      : `\n❌ ${failures} contrôle(s) en échec.\n`,
-  );
-  process.exit(failures === 0 ? 0 : 1);
+  console.log("\n== Resume ==");
+  if (failures === 0) {
+    console.log("Tous les tests sont passes.");
+  } else {
+    console.log(`${failures} test(s) en echec.`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {
-  console.error(error);
-  process.exit(1);
+  console.error("Erreur inattendue pendant les tests :", error);
+  process.exitCode = 1;
 });

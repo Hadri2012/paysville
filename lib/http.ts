@@ -55,7 +55,7 @@ export function limit(request: Request, scope: string, max: number, windowMs: nu
   }
 }
 
-/** URL publique du site, utilisée pour les redirections Stripe. */
+/** URL publique du site, utilisée dans les e-mails transactionnels. */
 export function siteUrl(request?: Request): string {
   const configured = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
   if (configured) return configured.replace(/\/+$/, "");

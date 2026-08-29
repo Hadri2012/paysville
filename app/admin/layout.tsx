@@ -5,7 +5,7 @@ import { getCurrentAdmin } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "Administration", template: "%s · Admin Hadrishop" },
+  title: { default: "Administration", template: "%s · Admin VéloLoc" },
   robots: { index: false, follow: false },
 };
 

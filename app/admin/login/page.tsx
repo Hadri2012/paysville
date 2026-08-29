@@ -40,12 +40,12 @@ export default function AdminLoginPage() {
       <div className="center">
         <Link href="/" className="logo" style={{ justifyContent: "center" }}>
           <span className="logo-mark" aria-hidden="true">
-            HS
+            VL
           </span>
-          Hadrishop
+          VéloLoc
         </Link>
         <h1 style={{ marginTop: 18 }}>Administration</h1>
-        <p className="muted small">Espace réservé à la gestion de la boutique.</p>
+        <p className="muted small">Espace réservé à la gestion des locations.</p>
       </div>
 
       <form className="card stack" onSubmit={submit}>
@@ -93,7 +93,7 @@ export default function AdminLoginPage() {
       <p className="small muted center">
         Identifiants définis par les variables d&apos;environnement{" "}
         <code>ADMIN_EMAIL</code> et <code>ADMIN_PASSWORD</code> lors de la première
-        connexion. <Link href="/">Retour à la boutique</Link>
+        connexion. <Link href="/">Retour au site</Link>
       </p>
     </div>
   );

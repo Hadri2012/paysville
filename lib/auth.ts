@@ -12,7 +12,7 @@ const scrypt = promisify(scryptCb) as (
   keylen: number,
 ) => Promise<Buffer>;
 
-export const ADMIN_COOKIE = "hadrishop_admin";
+export const ADMIN_COOKIE = "veloloc_admin";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
 const SCRYPT_KEYLEN = 64;
 
@@ -42,7 +42,8 @@ function pruneSessions(state: State, now = Date.now()): void {
 /**
  * Connexion administrateur. Au premier démarrage, le compte est créé à partir des
  * variables d'environnement ADMIN_EMAIL / ADMIN_PASSWORD (le mot de passe est
- * immédiatement haché puis conservé en base — l'environnement n'est plus nécessaire).
+ * immédiatement haché puis conservé en base — l'environnement n'est plus nécessaire
+ * ensuite, et n'est jamais exposé au navigateur).
  */
 export async function login(email: string, password: string): Promise<string> {
   const normalizedEmail = email.trim().toLowerCase();
@@ -111,17 +112,26 @@ export interface AdminIdentity {
   email: string;
 }
 
-/** Renvoie l'administrateur connecté, ou null. Toute la sécurité admin passe par ici. */
-export async function getCurrentAdmin(): Promise<AdminIdentity | null> {
-  const store = await cookies();
-  const token = store.get(ADMIN_COOKIE)?.value;
+/**
+ * Resout un jeton de session en identite admin, ou `null` si absent/expire/inconnu.
+ * Fonction pure (pas d'acces aux cookies) : c'est elle qui porte toute la logique
+ * de securite, testable independamment de `next/headers`.
+ */
+export function resolveAdminFromToken(state: State, token: string | undefined): AdminIdentity | null {
   if (!token) return null;
   const tokenHash = hashToken(token);
-  const state = await readState();
   const session = state.sessions.find((s) => s.tokenHash === tokenHash);
   if (!session || Date.parse(session.expiresAt) <= Date.now()) return null;
   const admin = state.admins.find((a) => a.id === session.adminId);
   return admin ? { id: admin.id, email: admin.email } : null;
+}
+
+/** Renvoie l'administrateur connecte, ou null. Toute la securite admin passe par ici. */
+export async function getCurrentAdmin(): Promise<AdminIdentity | null> {
+  const store = await cookies();
+  const token = store.get(ADMIN_COOKIE)?.value;
+  const state = await readState();
+  return resolveAdminFromToken(state, token);
 }
 
 export async function requireAdmin(): Promise<AdminIdentity> {

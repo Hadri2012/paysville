@@ -1,30 +1,9 @@
-import type { Product } from "./types";
+import type { Bike } from "./types";
 
-const PALETTES: [string, string][] = [
-  ["#e8f0ff", "#c7d9ff"],
-  ["#ffeede", "#ffd9bd"],
-  ["#e6f7f0", "#c4ebdb"],
-  ["#f3e9ff", "#e0cdff"],
-  ["#fff4e0", "#ffe4b8"],
-  ["#e9f3f7", "#ccdfe9"],
-];
-
-function hash(input: string): number {
-  let h = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    h = (h * 31 + input.charCodeAt(i)) >>> 0;
-  }
-  return h;
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? "")
-    .join("");
-}
+const PALETTES: Record<string, [string, string]> = {
+  normal: ["#e6f7f0", "#c4ebdb"],
+  electric: ["#e8f0ff", "#c7d9ff"],
+};
 
 function escapeXml(value: string): string {
   return value
@@ -36,21 +15,22 @@ function escapeXml(value: string): string {
 
 /**
  * Visuel de repli généré côté serveur (data-URI SVG, aucune requête externe)
- * quand aucune image n'a encore été renseignée pour un produit.
+ * quand aucune photo n'a encore été renseignée pour un vélo.
  */
-export function placeholderImage(name: string, sku = ""): string {
-  const [from, to] = PALETTES[hash(name + sku) % PALETTES.length];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600" role="img">
+export function placeholderImage(bike: Pick<Bike, "kind" | "name">): string {
+  const [from, to] = PALETTES[bike.kind] ?? PALETTES.normal;
+  const electric = bike.kind === "electric";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="600" height="400" role="img">
   <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="${from}"/><stop offset="100%" stop-color="${to}"/>
   </linearGradient></defs>
-  <rect width="600" height="600" fill="url(#g)"/>
-  <circle cx="300" cy="270" r="130" fill="#ffffff" opacity="0.55"/>
-  <text x="300" y="305" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="110" font-weight="700" fill="#1f2937" text-anchor="middle">${escapeXml(
-    initials(name) || "HS",
-  )}</text>
-  <text x="300" y="470" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="34" fill="#374151" opacity="0.75" text-anchor="middle">${escapeXml(
-    sku || "Hadrishop",
+  <rect width="600" height="400" fill="url(#g)"/>
+  <circle cx="185" cy="280" r="62" fill="none" stroke="#1f2937" stroke-width="10"/>
+  <circle cx="415" cy="280" r="62" fill="none" stroke="#1f2937" stroke-width="10"/>
+  <path d="M185 280 L275 160 L415 280 M275 160 L245 280 M275 160 L340 160 L365 210" fill="none" stroke="#1f2937" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  ${electric ? '<circle cx="365" cy="210" r="16" fill="#f59e0b"/>' : ""}
+  <text x="300" y="370" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#1f2937" text-anchor="middle" opacity="0.85">${escapeXml(
+    bike.name || "VéloLoc",
   )}</text>
 </svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
@@ -65,7 +45,7 @@ export function isSafeImageUrl(url: string): boolean {
   return false;
 }
 
-export function productImage(product: Pick<Product, "imageUrl" | "name" | "sku">): string {
-  if (product.imageUrl && isSafeImageUrl(product.imageUrl)) return product.imageUrl;
-  return placeholderImage(product.name, product.sku);
+export function bikeImage(bike: Pick<Bike, "kind" | "name" | "imageUrl">): string {
+  if (bike.imageUrl && isSafeImageUrl(bike.imageUrl)) return bike.imageUrl;
+  return placeholderImage(bike);
 }

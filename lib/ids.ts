@@ -8,20 +8,15 @@ export function newToken(bytes = 32): string {
   return randomBytes(bytes).toString("hex");
 }
 
-export function slugify(input: string): string {
-  return input
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-}
+const REQUEST_NUMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sans O/0/I/1, ambigus
 
-export function uniqueSlug(base: string, taken: string[]): string {
-  const root = slugify(base) || "produit";
-  if (!taken.includes(root)) return root;
-  let i = 2;
-  while (taken.includes(`${root}-${i}`)) i += 1;
-  return `${root}-${i}`;
+/** Numéro de demande lisible et unique, ex. « VL-2026-7K3F9Q ». Vérifié côté appelant. */
+export function generateRequestNumber(): string {
+  const year = new Date().getFullYear();
+  let suffix = "";
+  const bytes = randomBytes(6);
+  for (let i = 0; i < 6; i += 1) {
+    suffix += REQUEST_NUMBER_ALPHABET[bytes[i] % REQUEST_NUMBER_ALPHABET.length];
+  }
+  return `VL-${year}-${suffix}`;
 }

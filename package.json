@@ -1,5 +1,5 @@
 {
-  "name": "hadrishop",
+  "name": "veloloc",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,17 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "selftest": "rm -rf .selftest && tsc scripts/selftest.ts --outDir .selftest --module commonjs --target es2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict && HADRISHOP_DATA_FILE=.selftest/data.json node .selftest/scripts/selftest.js",
+    "selftest": "rm -rf .selftest && tsc scripts/selftest.ts --outDir .selftest --module commonjs --target es2022 --moduleResolution node --esModuleInterop --skipLibCheck --strict && VELOLOC_DATA_FILE=.selftest/data.json node .selftest/scripts/selftest.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.120.0",
     "next": "^16.3.2",
     "pg": "^8.23.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "stripe": "^22.5.0",
-    "three": "^0.185.1"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -25,7 +22,6 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/three": "^0.185.4",
     "eslint": "^9",
     "eslint-config-next": "^16.3.2",
     "typescript": "^5"

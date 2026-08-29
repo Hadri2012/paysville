@@ -1,8 +1,8 @@
 /**
  * Limitation de débit simple, en mémoire du processus.
- * Suffisante pour protéger la connexion admin, la validation de codes promo et le
- * suivi de commande d'un petit site. (Un stockage partagé serait nécessaire en cas
- * de déploiement multi-instances.)
+ * Suffisante pour protéger la connexion admin et le formulaire de demande d'un
+ * petit site. (Un stockage partagé serait nécessaire en cas de déploiement
+ * multi-instances.)
  */
 const buckets = new Map<string, number[]>();
 

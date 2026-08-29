@@ -15,7 +15,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[hadrishop] erreur d'affichage", error.digest ?? error.message);
+    console.error("[veloloc] erreur d'affichage", error.digest ?? error.message);
   }, [error]);
 
   return (
@@ -24,8 +24,8 @@ export default function GlobalError({
         <div className="empty-state">
           <h2>Une erreur est survenue</h2>
           <p>
-            Nous n&apos;avons pas pu afficher cette page. Aucun paiement n&apos;a été
-            effectué. Merci de réessayer dans un instant.
+            Nous n&apos;avons pas pu afficher cette page. Merci de réessayer dans un
+            instant.
           </p>
           <div className="btn-row" style={{ justifyContent: "center", marginTop: 16 }}>
             <button type="button" className="btn btn-primary" onClick={reset}>

@@ -1,6 +1,6 @@
 /**
  * Erreurs applicatives : un code stable + un message français destiné au client.
- * Les traces techniques ne sortent jamais du serveur (voir `toResponse`).
+ * Les traces techniques ne sortent jamais du serveur (voir `toErrorPayload`).
  */
 export class AppError extends Error {
   code: string;
@@ -17,99 +17,9 @@ export class AppError extends Error {
 }
 
 export const errors = {
-  productNotFound: (name?: string) =>
-    new AppError(
-      "product_not_found",
-      name
-        ? `Le produit « ${name} » n'est plus disponible dans la boutique.`
-        : "Ce produit est introuvable ou n'est plus disponible.",
-      404,
-    ),
-  outOfStock: (name: string) =>
-    new AppError("out_of_stock", `« ${name} » est en rupture de stock.`, 409),
-  insufficientStock: (name: string, available: number) =>
-    new AppError(
-      "insufficient_stock",
-      available > 0
-        ? `Il ne reste que ${available} exemplaire${available > 1 ? "s" : ""} de « ${name} ».`
-        : `« ${name} » n'est plus disponible en quantité suffisante.`,
-      409,
-    ),
-  emptyCart: () =>
-    new AppError("empty_cart", "Votre panier est vide.", 400),
-  invalidPromo: (reason?: string) =>
-    new AppError(
-      "invalid_promo",
-      reason ?? "Ce code promotionnel n'est pas valide.",
-      400,
-    ),
-  shippingNotCovered: () =>
-    new AppError(
-      "shipping_not_covered",
-      "Nous ne livrons pas encore à cette adresse. Hadrishop livre uniquement dans les communes indiquées sur la page Livraison.",
-      400,
-    ),
-  colorRequired: (name?: string) =>
-    new AppError(
-      "color_required",
-      name
-        ? `Choisissez une couleur pour « ${name} » avant de l'ajouter au panier.`
-        : "Choisissez une couleur avant de commander.",
-      400,
-    ),
-  invalidColor: (name?: string) =>
-    new AppError(
-      "invalid_color",
-      name
-        ? `La couleur choisie pour « ${name} » n'est plus proposée.`
-        : "Cette couleur n'est plus proposée.",
-      400,
-    ),
-  invalidCustomerData: (details: Record<string, string>) =>
-    new AppError(
-      "invalid_customer_data",
-      "Certaines informations du formulaire sont incorrectes ou incomplètes.",
-      400,
-      details,
-    ),
-  termsRequired: () =>
-    new AppError(
-      "terms_required",
-      "Vous devez accepter les conditions générales de vente pour commander.",
-      400,
-    ),
-  stripeNotConfigured: () =>
-    new AppError(
-      "stripe_not_configured",
-      "Le paiement en ligne n'est pas encore configuré. Merci de réessayer plus tard.",
-      503,
-    ),
-  stripeError: () =>
-    new AppError(
-      "stripe_error",
-      "Le service de paiement est momentanément indisponible. Aucun montant n'a été débité.",
-      502,
-    ),
-  orderNotFound: () =>
-    new AppError(
-      "order_not_found",
-      "Aucune commande ne correspond à ces informations.",
-      404,
-    ),
-  downloadNotAvailable: () =>
-    new AppError(
-      "download_not_available",
-      "Ce fichier n'est pas disponible au téléchargement pour cette commande.",
-      404,
-    ),
-  unauthorized: () =>
-    new AppError("unauthorized", "Authentification requise.", 401),
+  unauthorized: () => new AppError("unauthorized", "Authentification requise.", 401),
   invalidCredentials: () =>
-    new AppError(
-      "invalid_credentials",
-      "Adresse e-mail ou mot de passe incorrect.",
-      401,
-    ),
+    new AppError("invalid_credentials", "Adresse e-mail ou mot de passe incorrect.", 401),
   rateLimited: () =>
     new AppError(
       "rate_limited",
@@ -118,6 +28,46 @@ export const errors = {
     ),
   validation: (message: string, details?: unknown) =>
     new AppError("validation_error", message, 400, details),
+  invalidRequestData: (details: Record<string, string>) =>
+    new AppError(
+      "invalid_request_data",
+      "Certaines informations du formulaire sont incorrectes ou incomplètes.",
+      400,
+      details,
+    ),
+  termsRequired: () =>
+    new AppError(
+      "terms_required",
+      "Vous devez accepter les conditions de location pour envoyer une demande.",
+      400,
+    ),
+  bikeUnavailable: (name?: string) =>
+    new AppError(
+      "bike_unavailable",
+      name
+        ? `« ${name} » n'est actuellement pas disponible à la location.`
+        : "Ce vélo n'est actuellement pas disponible à la location.",
+      409,
+    ),
+  invalidPeriod: (message = "La période choisie n'est pas valide.") =>
+    new AppError("invalid_period", message, 400),
+  overlap: (name?: string) =>
+    new AppError(
+      "overlap",
+      name
+        ? `« ${name} » est déjà réservé sur une période qui chevauche celle-ci.`
+        : "Ce vélo est déjà réservé sur une période qui chevauche celle-ci.",
+      409,
+    ),
+  requestNotFound: () =>
+    new AppError(
+      "request_not_found",
+      "Aucune demande ne correspond à ces informations.",
+      404,
+    ),
+  invalidStatus: () => new AppError("invalid_status", "Statut de demande inconnu.", 400),
+  invalidTransition: (message: string) =>
+    new AppError("invalid_transition", message, 409),
   server: () =>
     new AppError(
       "server_error",
@@ -140,7 +90,7 @@ export function toErrorPayload(error: unknown): {
     };
   }
   // Trace technique : uniquement dans les logs serveur.
-  console.error("[hadrishop] erreur inattendue", error);
+  console.error("[veloloc] erreur inattendue", error);
   const fallback = errors.server();
   return {
     status: fallback.status,

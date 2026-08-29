@@ -40,7 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# hadrishop local data (file driver)
+# veloloc local data (file driver)
 /.data/
 /.selftest/
 /.livetest/

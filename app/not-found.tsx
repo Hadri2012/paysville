@@ -7,14 +7,14 @@ export default function NotFound() {
         <div className="empty-state">
           <h2>Page introuvable</h2>
           <p>
-            La page que vous cherchez n&apos;existe pas ou a été déplacée sur Hadrishop.
+            La page que vous cherchez n&apos;existe pas ou a été déplacée.
           </p>
           <div className="btn-row" style={{ justifyContent: "center", marginTop: 16 }}>
             <Link href="/" className="btn btn-primary">
               Retour à l&apos;accueil
             </Link>
-            <Link href="/boutique" className="btn btn-secondary">
-              Voir la boutique
+            <Link href="/suivi" className="btn btn-secondary">
+              Suivre ma demande
             </Link>
           </div>
         </div>

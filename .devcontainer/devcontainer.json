@@ -1,13 +1,13 @@
 {
-  "name": "Hadrishop",
+  "name": "VeloLoc",
   "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {
-      "label": "Hadrishop",
+      "label": "VeloLoc",
       "onAutoForward": "openPreview"
     }
   },
   "postCreateCommand": "npm install && cp -n .env.example .env.local || true",
-  "postStartCommand": "echo 'Pensez à renseigner .env.local (ADMIN_EMAIL, ADMIN_PASSWORD, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET) puis lancez: npm run dev'"
+  "postStartCommand": "echo 'Pensez a renseigner .env.local (ADMIN_EMAIL, ADMIN_PASSWORD) puis lancez: npm run dev'"
 }
