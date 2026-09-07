@@ -14,7 +14,15 @@ import {
 } from "../lib/digital";
 import { applyAdditions, type CartLine } from "../lib/cart";
 import { NOTIFIED_STATUSES, renderOrderEmail } from "../lib/email/orderEmails";
+import {
+  findDocumentBySlug,
+  listPublicDocuments,
+  pageImageUrl,
+  updateDocument,
+} from "../lib/documents";
 import { customerOrderHistory, isReorderable } from "../lib/history";
+import { applyDocumentEdit, parseDocumentEdit } from "../lib/pdfEdit";
+import { isPdfFile } from "../lib/pdfRender";
 import { newId } from "../lib/ids";
 import { notifyOrderStatus } from "../lib/notify";
 import {
@@ -1784,6 +1792,188 @@ async function main() {
   );
 
   await deleteAsset(digitalAssetId);
+
+  console.log("\n== Documents PDF publiés ==");
+  // PDF de test fabriqué ici : le selftest ne dépend d'aucun fichier externe.
+  // pdf-lib suffit — la rasterisation (pdf.js + canvas natif) n'est pas
+  // sollicitée, elle est vérifiée en conditions réelles sur un serveur lancé.
+  const { PDFDocument: TestPdf, StandardFonts: TestFonts } = await import("pdf-lib");
+  const buildPdf = async (pageCount: number): Promise<Buffer> => {
+    const doc = await TestPdf.create();
+    const font = await doc.embedFont(TestFonts.Helvetica);
+    for (let i = 1; i <= pageCount; i++) {
+      const page = doc.addPage([595, 842]);
+      page.drawText(`Page ${i}`, { x: 60, y: 760, size: 24, font });
+    }
+    return Buffer.from(await doc.save());
+  };
+
+  const sourcePdf = await buildPdf(3);
+  check("PDF de test reconnu", isPdfFile(sourcePdf));
+  check("un fichier quelconque n'est pas un PDF", !isPdfFile(Buffer.from("ceci n'est pas un pdf")));
+
+  // Validation des opérations d'édition : le navigateur envoie des coordonnées
+  // relatives, tout est revérifié côté serveur.
+  expectThrows(
+    "annotation sur une page inexistante refusée",
+    () => parseDocumentEdit({ annotations: [{ type: "text", page: 9, x: 0.1, y: 0.1, size: 0.02, color: "#000000", text: "x" }] }, 3),
+    "validation_error",
+  );
+  expectThrows(
+    "couleur invalide refusée",
+    () => parseDocumentEdit({ annotations: [{ type: "text", page: 1, x: 0.1, y: 0.1, size: 0.02, color: "rouge", text: "x" }] }, 3),
+    "validation_error",
+  );
+  expectThrows(
+    "texte vide refusé",
+    () => parseDocumentEdit({ annotations: [{ type: "text", page: 1, x: 0.1, y: 0.1, size: 0.02, color: "#000000", text: "   " }] }, 3),
+    "validation_error",
+  );
+  expectThrows(
+    "page dupliquée dans l'ordre refusée",
+    () => parseDocumentEdit({ order: [1, 1, 2] }, 3),
+    "validation_error",
+  );
+  expectThrows(
+    "document sans aucune page refusé",
+    () => parseDocumentEdit({ order: [] }, 3),
+    "validation_error",
+  );
+  expectThrows(
+    "rotation invalide refusée",
+    () => parseDocumentEdit({ rotations: { 1: 45 } }, 3),
+    "validation_error",
+  );
+  const parsedEdit = parseDocumentEdit(
+    {
+      annotations: [
+        { type: "text", page: 1, x: 0.1, y: 0.1, size: 0.02, color: "#D92D20", text: "Bonjour" },
+        { type: "highlight", page: 2, x: 0.1, y: 0.2, width: 0.4, height: 0.05, color: "#f79009", opacity: 3 },
+        { type: "ink", page: 2, strokes: [[[0.1, 0.1], [0.2, 0.3]]], color: "#1570ef", width: 0.004 },
+      ],
+      rotations: { 2: 90 },
+      order: [3, 1],
+    },
+    3,
+  );
+  check(
+    "édition normalisée : couleur en minuscules, opacité bornée",
+    parsedEdit.annotations[0].type === "text" &&
+      parsedEdit.annotations[0].color === "#d92d20" &&
+      parsedEdit.annotations[1].type === "highlight" &&
+      parsedEdit.annotations[1].opacity === 1,
+  );
+
+  // Application réelle au PDF : annotations, rotation, suppression et
+  // réordonnancement en une passe.
+  const editedPdf = await applyDocumentEdit(sourcePdf, parsedEdit);
+  check("PDF édité toujours valide", isPdfFile(editedPdf));
+  const editedDoc = await TestPdf.load(new Uint8Array(editedPdf));
+  check(
+    "pages supprimées et réordonnées : 3 pages → 2",
+    editedDoc.getPageCount() === 2,
+    `${editedDoc.getPageCount()} page(s)`,
+  );
+  const rotationOnly = await applyDocumentEdit(sourcePdf, {
+    annotations: [],
+    rotations: { 1: 90 },
+    order: null,
+  });
+  const rotatedDoc = await TestPdf.load(new Uint8Array(rotationOnly));
+  check(
+    "rotation appliquée à la page visée, les autres intactes",
+    rotatedDoc.getPage(0).getRotation().angle === 90 &&
+      rotatedDoc.getPage(1).getRotation().angle === 0 &&
+      rotatedDoc.getPageCount() === 3,
+  );
+  // Une annotation seule ne doit toucher ni au nombre de pages ni à leur ordre.
+  const annotatedOnly = await applyDocumentEdit(sourcePdf, {
+    annotations: [
+      { type: "text", page: 1, x: 0.2, y: 0.2, size: 0.03, color: "#101828", text: "Ajout\nsur deux lignes" },
+    ],
+    rotations: {},
+    order: null,
+  });
+  const annotatedDoc = await TestPdf.load(new Uint8Array(annotatedOnly));
+  check(
+    "annotation seule : pages inchangées, fichier plus lourd",
+    annotatedDoc.getPageCount() === 3 && annotatedOnly.length > 0,
+  );
+
+  // Cycle de vie dans l'état, sans passer par la rasterisation : on écrit
+  // directement un document comme le ferait `createDocument`.
+  const documentId = newId();
+  await transaction((state) => {
+    const now = new Date().toISOString();
+    state.documents.push({
+      id: documentId,
+      slug: "guide-de-montage",
+      title: "Guide de montage",
+      description: "Notice illustrée.",
+      visible: false,
+      pdfAssetId: "a".repeat(32),
+      sizeBytes: sourcePdf.length,
+      pages: [
+        { assetId: "b".repeat(32), width: 1190, height: 1684 },
+        { assetId: "c".repeat(32), width: 1190, height: 1684 },
+      ],
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  check(
+    "document masqué : absent de la liste publique",
+    listPublicDocuments(await readState()).length === 0,
+  );
+  await transaction((state) => updateDocument(state, documentId, { visible: true }));
+  const publicDocs = listPublicDocuments(await readState());
+  check(
+    "document rendu visible : présent avec son nombre de pages",
+    publicDocs.length === 1 && publicDocs[0].pageCount === 2 && publicDocs[0].slug === "guide-de-montage",
+  );
+
+  const storedDocument = (await readState()).documents.find((d) => d.id === documentId)!;
+  check(
+    "URL de page : identifiant d'asset + version, jamais le PDF",
+    pageImageUrl(storedDocument, storedDocument.pages[0]) ===
+      `/api/documents/pages/${"b".repeat(32)}?v=1`,
+  );
+  check(
+    "document retrouvé par son slug",
+    findDocumentBySlug(await readState(), "guide-de-montage")?.id === documentId,
+  );
+
+  // Renommer change le slug, sans jamais heurter celui d'un autre document.
+  await transaction((state) => {
+    const now = new Date().toISOString();
+    state.documents.push({
+      id: newId(),
+      slug: "notice",
+      title: "Notice",
+      description: "",
+      visible: true,
+      pdfAssetId: "d".repeat(32),
+      sizeBytes: 10,
+      pages: [{ assetId: "e".repeat(32), width: 100, height: 100 }],
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+  await transaction((state) => updateDocument(state, documentId, { title: "Notice" }));
+  const renamed = (await readState()).documents.find((d) => d.id === documentId)!;
+  check(
+    "titre en doublon : slug distinct malgré tout",
+    renamed.title === "Notice" && renamed.slug !== "notice",
+    renamed.slug,
+  );
+  expectThrows(
+    "titre vide refusé",
+    () => updateDocument({ documents: [renamed] } as unknown as Parameters<typeof updateDocument>[0], documentId, { title: " " }),
+    "validation_error",
+  );
 
   console.log(
     failures === 0

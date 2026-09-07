@@ -191,6 +191,45 @@ export interface Order {
   notifiedStatuses: OrderStatus[];
 }
 
+/**
+ * Une page d'un document publié, telle qu'elle est servie au navigateur : une
+ * image rendue par le serveur (voir `lib/pdfRender.ts`). Le PDF lui-même ne
+ * quitte jamais le serveur — c'est ce qui rend le téléchargement impossible,
+ * pas un simple bouton masqué.
+ */
+export interface DocumentPage {
+  /** Identifiant de l'asset image (JPEG) de cette page. */
+  assetId: string;
+  /** Dimensions de l'image rendue, en pixels. */
+  width: number;
+  height: number;
+}
+
+/**
+ * Document PDF publié sur le site (page « Documents »). Le fichier source est
+ * conservé dans le magasin d'assets sous `pdfAssetId` — uniquement pour être
+ * réédité (voir `lib/pdfEdit.ts`) et re-rendu ; aucune route ne le sert.
+ */
+export interface PublishedDocument {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  /** Faux = invisible : absent de la liste publique et de la visionneuse. */
+  visible: boolean;
+  pdfAssetId: string;
+  sizeBytes: number;
+  pages: DocumentPage[];
+  /** Incrémenté à chaque édition : sert à invalider les caches d'images. */
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Bornes des documents publiés. */
+export const MAX_DOCUMENT_BYTES = 10_000_000;
+export const MAX_DOCUMENT_PAGES = 150;
+
 export interface Promotion {
   id: string;
   code: string;
@@ -348,6 +387,7 @@ export interface State {
   orders: Order[];
   promotions: Promotion[];
   reviews: Review[];
+  documents: PublishedDocument[];
   shippingZones: ShippingZone[];
   reservations: Reservation[];
   admins: AdminUser[];

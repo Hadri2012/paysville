@@ -104,6 +104,8 @@ export const errors = {
       "Cette nouvelle adresse changerait les frais de livraison de la commande. Contactez-nous pour ce type de modification.",
       409,
     ),
+  documentNotFound: () =>
+    new AppError("document_not_found", "Ce document est introuvable.", 404),
   downloadNotAvailable: () =>
     new AppError(
       "download_not_available",

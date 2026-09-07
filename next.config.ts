@@ -58,8 +58,25 @@ const securityHeaders = [
     : []),
 ];
 
+/**
+ * Rendu des documents PDF (voir `lib/pdfRender.ts`) : pdf.js et le canvas
+ * natif s'exécutent dans Node tels quels, hors bundle. Les polices standard et
+ * le « worker » de pdf.js sont chargés à l'exécution par chemin, pas par
+ * import : il faut les déclarer pour qu'ils soient embarqués dans les
+ * fonctions serveur qui en ont besoin.
+ */
+const PDF_RUNTIME_FILES = [
+  "./node_modules/pdfjs-dist/standard_fonts/**",
+  "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  serverExternalPackages: ["@napi-rs/canvas", "pdfjs-dist", "pdf-lib"],
+  outputFileTracingIncludes: {
+    "/api/admin/documents": PDF_RUNTIME_FILES,
+    "/api/admin/documents/[id]/edition": PDF_RUNTIME_FILES,
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

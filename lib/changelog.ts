@@ -43,6 +43,19 @@ export const CHANGE_KIND_BADGES: Record<ChangeKind, string> = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    at: "2026-09-07T16:30:00Z",
+    kind: "nouveaute",
+    title: "Documents PDF consultables en ligne",
+    details:
+      "Une nouvelle rubrique « Documents » permet de publier des PDF lus directement sur le site, page par page, sans possibilité de téléchargement.",
+    bullets: [
+      "Le PDF ne quitte jamais le serveur : chaque page est convertie en image à la publication, et c'est tout ce que le navigateur reçoit. Il n'y a donc aucun fichier à récupérer, même en inspectant la page.",
+      "Chaque document se rend visible ou invisible d'un clic : masqué, il disparaît de la liste publique et ses pages ne sont plus servies du tout.",
+      "Un éditeur intégré permet d'annoter (texte, surlignage, dessin à main levée), de pivoter, de supprimer et de réordonner les pages ; les modifications sont appliquées au vrai PDF, qui reste vectoriel.",
+      "Réglage dans Administration → Documents.",
+    ],
+  },
+  {
     at: "2026-08-28T11:00:00Z",
     kind: "nouveaute",
     title: "Paiement par carte à la livraison",

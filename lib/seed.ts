@@ -221,6 +221,7 @@ export function initialState(): State {
     orders: [],
     promotions: [defaultPromotion()],
     reviews: [],
+    documents: [],
     shippingZones: defaultShippingZones(),
     reservations: [],
     admins: [],

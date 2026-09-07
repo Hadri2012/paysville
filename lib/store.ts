@@ -3,7 +3,7 @@ import path from "path";
 import { defaultPromotion, defaultShippingZones, initialState } from "./seed";
 import type { State } from "./types";
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 
 /**
  * Couche de persistance de Hadrishop.
@@ -42,6 +42,7 @@ function normalize(state: State): State {
     orders: state.orders ?? [],
     promotions: state.promotions ?? [],
     reviews: state.reviews ?? [],
+    documents: state.documents ?? [],
     shippingZones: state.shippingZones ?? [],
     reservations: state.reservations ?? [],
     admins: state.admins ?? [],
@@ -170,6 +171,12 @@ function migrate(state: State): State {
         order.status !== "canceled" &&
         order.status !== "refunded";
     }
+  }
+
+  // v9 -> v10 : documents PDF publiés. Le tableau est déjà créé par
+  // `normalize()` ; cette étape ne sert qu'à porter le numéro de version.
+  if (state.schemaVersion < 10) {
+    state.documents ??= [];
   }
 
   state.schemaVersion = CURRENT_SCHEMA_VERSION;

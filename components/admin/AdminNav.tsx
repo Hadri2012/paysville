@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/admin/stocks", label: "Stocks" },
   { href: "/admin/promotions", label: "Promotions" },
   { href: "/admin/avis", label: "Avis clients" },
+  { href: "/admin/documents", label: "Documents" },
   { href: "/admin/livraison", label: "Livraison" },
   { href: "/admin/emails", label: "E-mails" },
   { href: "/admin/parametres", label: "Paramètres" },
